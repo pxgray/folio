@@ -1,0 +1,66 @@
+package gitstore
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/go-git/go-git/v5/plumbing"
+)
+
+// LocalRepo serves a live working tree from disk. The hash parameter in all
+// methods is ignored; reads go directly to the filesystem.
+type LocalRepo struct {
+	root string
+}
+
+func newLocalRepo(root string) *LocalRepo {
+	return &LocalRepo{root: root}
+}
+
+// ResolveRef always returns ZeroHash. The ref parameter is ignored.
+func (r *LocalRepo) ResolveRef(_ context.Context, _ string) (plumbing.Hash, error) {
+	return plumbing.ZeroHash, nil
+}
+
+// ReadBlob reads the file at path relative to the repo root.
+func (r *LocalRepo) ReadBlob(_ plumbing.Hash, path string) ([]byte, error) {
+	data, err := os.ReadFile(filepath.Join(r.root, path))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	return data, nil
+}
+
+// ReadTree lists the directory at path relative to the repo root.
+// If path is empty, the root directory is listed.
+func (r *LocalRepo) ReadTree(_ plumbing.Hash, path string) ([]TreeEntry, error) {
+	dir := filepath.Join(r.root, path)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("readdir %s: %w", path, err)
+	}
+	result := make([]TreeEntry, 0, len(entries))
+	for _, e := range entries {
+		te := TreeEntry{Name: e.Name(), IsDir: e.IsDir()}
+		if !te.IsDir {
+			if info, err := e.Info(); err == nil {
+				te.Size = info.Size()
+			}
+		}
+		result = append(result, te)
+	}
+	return result, nil
+}
+
+// FetchNow is a no-op for local repos.
+func (r *LocalRepo) FetchNow(_ context.Context) error {
+	return nil
+}
