@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -108,6 +109,18 @@ func TestHandleDoc_MarkdownRender(t *testing.T) {
 	ct := resp.Header.Get("Content-Type")
 	if !strings.HasPrefix(ct, "text/html") {
 		t.Errorf("Content-Type = %q, want text/html", ct)
+	}
+
+	// Verify the actual Markdown content is rendered, not an empty/wrong template.
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	if !strings.Contains(bodyStr, "Welcome to Folio") {
+		t.Errorf("rendered page missing expected content; got %d bytes, body snippet: %q",
+			len(bodyStr), bodyStr[:min(300, len(bodyStr))])
+	}
+	// The repo-list content from index.html must NOT appear on a doc page.
+	if strings.Contains(bodyStr, "repo-list") {
+		t.Errorf("doc page is incorrectly rendering index.html content block")
 	}
 }
 

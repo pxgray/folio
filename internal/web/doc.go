@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"html/template"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -139,7 +140,9 @@ func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, 
 		Ref:         ref,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.tmpl.ExecuteTemplate(w, "doc.html", data)
+	if err := s.docTmpl.ExecuteTemplate(w, "base.html", data); err != nil {
+		log.Printf("folio: render doc %s: %v", filePath, err)
+	}
 }
 
 func (s *Server) serveDirPage(w http.ResponseWriter, gr *gitstore.Repo, hash plumbing.Hash, repoBase, repoName, dirPath, ref string) {
@@ -191,7 +194,9 @@ func (s *Server) serveDirPage(w http.ResponseWriter, gr *gitstore.Repo, hash plu
 		currentPath: dirPath,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.tmpl.ExecuteTemplate(w, "dir.html", data)
+	if err := s.dirTmpl.ExecuteTemplate(w, "base.html", data); err != nil {
+		log.Printf("folio: render dir %s: %v", dirPath, err)
+	}
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -206,7 +211,9 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		Repos: s.store.Repos(),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.tmpl.ExecuteTemplate(w, "index.html", data)
+	if err := s.indexTmpl.ExecuteTemplate(w, "base.html", data); err != nil {
+		log.Printf("folio: render index: %v", err)
+	}
 }
 
 // headingTitle extracts the text of the first # heading from Markdown source.

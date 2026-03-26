@@ -17,10 +17,12 @@ import (
 
 // Server is the Folio HTTP server.
 type Server struct {
-	store    *gitstore.Store
-	tmpl     *template.Template
-	staticFS fs.FS
-	cfg      *config.Config
+	store     *gitstore.Store
+	docTmpl   *template.Template // base.html + doc.html
+	dirTmpl   *template.Template // base.html + dir.html
+	indexTmpl *template.Template // base.html + index.html
+	staticFS  fs.FS
+	cfg       *config.Config
 }
 
 // New creates a Server. tmplFS should embed templates/*.html and staticFS
@@ -31,16 +33,29 @@ func New(cfg *config.Config, store *gitstore.Store, tmplFS embed.FS, staticFS fs
 		"not":        func(b bool) bool { return !b },
 	}
 
-	tmpl, err := template.New("").Funcs(funcMap).ParseFS(tmplFS, "templates/*.html")
+	// Each page type gets its own template set (base + page-specific).
+	// This prevents the {{define "content"}} blocks from colliding in a shared set,
+	// which would cause the last-parsed file's block to win for all pages.
+	docTmpl, err := template.New("").Funcs(funcMap).ParseFS(tmplFS, "templates/base.html", "templates/doc.html")
 	if err != nil {
-		return nil, fmt.Errorf("parse templates: %w", err)
+		return nil, fmt.Errorf("parse doc template: %w", err)
+	}
+	dirTmpl, err := template.New("").Funcs(funcMap).ParseFS(tmplFS, "templates/base.html", "templates/dir.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse dir template: %w", err)
+	}
+	indexTmpl, err := template.New("").Funcs(funcMap).ParseFS(tmplFS, "templates/base.html", "templates/index.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse index template: %w", err)
 	}
 
 	return &Server{
-		store:    store,
-		tmpl:     tmpl,
-		staticFS: staticFS,
-		cfg:      cfg,
+		store:     store,
+		docTmpl:   docTmpl,
+		dirTmpl:   dirTmpl,
+		indexTmpl: indexTmpl,
+		staticFS:  staticFS,
+		cfg:       cfg,
 	}, nil
 }
 
