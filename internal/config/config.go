@@ -11,9 +11,10 @@ import (
 )
 
 type Config struct {
-	Server ServerConfig `toml:"server"`
-	Cache  CacheConfig  `toml:"cache"`
-	Repos  []RepoConfig `toml:"repos"`
+	Server ServerConfig  `toml:"server"`
+	Cache  CacheConfig   `toml:"cache"`
+	Repos  []RepoConfig  `toml:"repos"`
+	Locals []LocalConfig `toml:"local"`
 }
 
 type ServerConfig struct {
@@ -31,6 +32,11 @@ type RepoConfig struct {
 	Repo          string `toml:"repo"`
 	Remote        string `toml:"remote"`
 	WebhookSecret string `toml:"webhook_secret"`
+}
+
+type LocalConfig struct {
+	Label string `toml:"label"`
+	Path  string `toml:"path"`
 }
 
 // Key returns the canonical string key for a repo: "host/owner/repo".
@@ -82,6 +88,15 @@ func (c *Config) expand() error {
 		return fmt.Errorf("config: expand cache dir: %w", err)
 	}
 	c.Cache.Dir = dir
+
+	for i := range c.Locals {
+		p, err := expandHome(c.Locals[i].Path)
+		if err != nil {
+			return fmt.Errorf("config: expand locals[%d] path: %w", i, err)
+		}
+		c.Locals[i].Path = p
+	}
+
 	return nil
 }
 
@@ -97,6 +112,16 @@ func (c *Config) validate() error {
 			return fmt.Errorf("config: repos[%d]: repo is required", i)
 		}
 	}
+
+	for i, l := range c.Locals {
+		if l.Label == "" {
+			return fmt.Errorf("config: locals[%d]: label is required", i)
+		}
+		if l.Path == "" {
+			return fmt.Errorf("config: locals[%d]: path is required", i)
+		}
+	}
+
 	return nil
 }
 

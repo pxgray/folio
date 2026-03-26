@@ -94,3 +94,66 @@ func TestValidateMissingFields(t *testing.T) {
 		t.Error("expected error for missing host, got nil")
 	}
 }
+
+func TestLoadLocal(t *testing.T) {
+	f, err := os.CreateTemp("", "folio-config-*.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+
+	_, _ = f.WriteString(`
+[[local]]
+label = "my-docs"
+path  = "/tmp/my-docs"
+
+[[local]]
+label = "other"
+path  = "/tmp/other"
+`)
+	f.Close()
+
+	cfg, err := Load(f.Name())
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Locals) != 2 {
+		t.Fatalf("locals count = %d, want 2", len(cfg.Locals))
+	}
+	if cfg.Locals[0].Label != "my-docs" {
+		t.Errorf("locals[0].Label = %q, want my-docs", cfg.Locals[0].Label)
+	}
+	if cfg.Locals[0].Path != "/tmp/my-docs" {
+		t.Errorf("locals[0].Path = %q, want /tmp/my-docs", cfg.Locals[0].Path)
+	}
+}
+
+func TestValidateLocalMissingLabel(t *testing.T) {
+	f, err := os.CreateTemp("", "folio-config-*.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	_, _ = f.WriteString("[[local]]\npath = \"/tmp/foo\"\n")
+	f.Close()
+
+	_, err = Load(f.Name())
+	if err == nil {
+		t.Error("expected error for missing label, got nil")
+	}
+}
+
+func TestValidateLocalMissingPath(t *testing.T) {
+	f, err := os.CreateTemp("", "folio-config-*.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	_, _ = f.WriteString("[[local]]\nlabel = \"foo\"\n")
+	f.Close()
+
+	_, err = Load(f.Name())
+	if err == nil {
+		t.Error("expected error for missing path, got nil")
+	}
+}
