@@ -11,21 +11,23 @@ import (
 	"github.com/pxgray/folio/internal/config"
 )
 
-// Store manages all registered bare-clone repositories.
+// Store manages all registered repositories (remote bare clones and local working trees).
 type Store struct {
-	cfg   *config.Config
-	repos map[string]*Repo // keyed by RepoConfig.Key()
+	cfg    *config.Config
+	repos  map[string]*Repo
+	locals map[string]*LocalRepo
 }
 
-// New creates a Store from the given config. Call EnsureCloned before serving.
+// New creates a Store from the given config. Call EnsureCloned and OpenLocals before serving.
 func New(cfg *config.Config) *Store {
 	return &Store{
-		cfg:   cfg,
-		repos: make(map[string]*Repo, len(cfg.Repos)),
+		cfg:    cfg,
+		repos:  make(map[string]*Repo, len(cfg.Repos)),
+		locals: make(map[string]*LocalRepo, len(cfg.Locals)),
 	}
 }
 
-// EnsureCloned initialises all repos: bare-clones those missing from disk,
+// EnsureCloned initialises all remote repos: bare-clones those missing from disk,
 // and opens existing ones. Should be called once at startup.
 func (s *Store) EnsureCloned(ctx context.Context) error {
 	for _, rc := range s.cfg.Repos {
@@ -53,9 +55,22 @@ func (s *Store) EnsureCloned(ctx context.Context) error {
 	return nil
 }
 
-// Get returns the Repo for the given host/owner/repo triple.
+// OpenLocals validates and registers all local repos from config.
+// Should be called once at startup.
+func (s *Store) OpenLocals() error {
+	for _, lc := range s.cfg.Locals {
+		if _, err := os.Stat(lc.Path); err != nil {
+			return fmt.Errorf("local repo %q: %w", lc.Label, err)
+		}
+		s.locals[lc.Label] = newLocalRepo(lc.Path)
+		log.Printf("folio: registered local repo %q at %s", lc.Label, lc.Path)
+	}
+	return nil
+}
+
+// Get returns the Repository for the given host/owner/repo triple.
 // Returns ErrNotRegistered if the repo is not in the config.
-func (s *Store) Get(host, owner, repo string) (*Repo, error) {
+func (s *Store) Get(host, owner, repo string) (Repository, error) {
 	key := host + "/" + owner + "/" + repo
 	r, ok := s.repos[key]
 	if !ok {
@@ -64,7 +79,17 @@ func (s *Store) Get(host, owner, repo string) (*Repo, error) {
 	return r, nil
 }
 
-// Repos returns all registered repos (used by the index page).
+// GetLocal returns the Repository for the given local label.
+// Returns ErrNotRegistered if the label is not in the config.
+func (s *Store) GetLocal(label string) (Repository, error) {
+	r, ok := s.locals[label]
+	if !ok {
+		return nil, fmt.Errorf("%w: local/%s", ErrNotRegistered, label)
+	}
+	return r, nil
+}
+
+// Repos returns all registered remote repo configs (used by the index page).
 func (s *Store) Repos() []*config.RepoConfig {
 	out := make([]*config.RepoConfig, 0, len(s.cfg.Repos))
 	for i := range s.cfg.Repos {
@@ -73,3 +98,11 @@ func (s *Store) Repos() []*config.RepoConfig {
 	return out
 }
 
+// Locals returns all registered local repo configs (used by the index page).
+func (s *Store) Locals() []*config.LocalConfig {
+	out := make([]*config.LocalConfig, 0, len(s.cfg.Locals))
+	for i := range s.cfg.Locals {
+		out = append(out, &s.cfg.Locals[i])
+	}
+	return out
+}
