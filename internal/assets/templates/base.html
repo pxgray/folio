@@ -21,9 +21,32 @@
   </nav>
   {{end}}
 
-  <main>
-    {{block "content" .}}{{end}}
-  </main>
+  <div class="page-body{{if .Nav}} has-sidebar{{end}}">
+    {{if .Nav}}
+    <nav class="sidebar" aria-label="navigation">
+      <ul class="nav-tree">
+        {{range .Nav}}
+        {{if .Children}}
+        <li class="nav-section">
+          <span class="nav-section-label">{{.Label}}</span>
+          <ul class="nav-children">
+            {{range .Children}}
+            <li class="nav-leaf"><a href="{{$.RepoBase}}/{{.Path}}{{if $.Ref}}?ref={{$.Ref}}{{end}}">{{.Label}}</a></li>
+            {{end}}
+          </ul>
+        </li>
+        {{else}}
+        <li class="nav-leaf"><a href="{{$.RepoBase}}/{{.Path}}{{if $.Ref}}?ref={{$.Ref}}{{end}}">{{.Label}}</a></li>
+        {{end}}
+        {{end}}
+      </ul>
+    </nav>
+    {{end}}
+
+    <main>
+      {{block "content" .}}{{end}}
+    </main>
+  </div>
 
   <footer class="footer">
     <a href="https://github.com/pxgray/folio">Folio</a>

@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/pxgray/folio/internal/gitstore"
+	"github.com/pxgray/folio/internal/nav"
 	"github.com/pxgray/folio/internal/render"
 )
 
@@ -21,6 +22,7 @@ type docData struct {
 	RepoBase    string
 	RepoName    string
 	Ref         string
+	Nav         []nav.Item
 }
 
 type dirData struct {
@@ -31,6 +33,7 @@ type dirData struct {
 	RepoBase    string
 	RepoName    string
 	Ref         string
+	Nav         []nav.Item
 	// currentPath is the dir path within the repo, used to build entry URLs.
 	currentPath string
 }
@@ -89,9 +92,10 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 
 	repoBase := "/" + host + "/" + owner + "/" + repo
 	repoName := host + "/" + owner + "/" + repo
+	navItems := loadNav(gr, hash)
 
 	if filePath == "" {
-		s.serveDirPage(w, gr, hash, repoBase, repoName, "", ref)
+		s.serveDirPage(w, gr, hash, repoBase, repoName, "", ref, navItems)
 		return
 	}
 
@@ -99,7 +103,7 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 	blob, err := gr.ReadBlob(hash, filePath)
 	if err == nil {
 		if strings.HasSuffix(filePath, ".md") {
-			s.serveMarkdownPage(w, blob, repoBase, repoName, filePath, ref)
+			s.serveMarkdownPage(w, blob, repoBase, repoName, filePath, ref, navItems)
 			return
 		}
 		rawURL := repoBase + "/-/raw/" + filePath + refQuery(ref)
@@ -114,14 +118,14 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 	// Try as a directory.
 	_, treeErr := gr.ReadTree(hash, filePath)
 	if treeErr == nil {
-		s.serveDirPage(w, gr, hash, repoBase, repoName, filePath, ref)
+		s.serveDirPage(w, gr, hash, repoBase, repoName, filePath, ref, navItems)
 		return
 	}
 
 	httpError(w, http.StatusNotFound, "not found: "+filePath)
 }
 
-func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, repoName, filePath, ref string) {
+func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, repoName, filePath, ref string, navItems []nav.Item) {
 	content, err := render.Render(src, repoBase, filePath, ref)
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "render error: "+err.Error())
@@ -138,6 +142,7 @@ func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, 
 		RepoBase:    repoBase,
 		RepoName:    repoName,
 		Ref:         ref,
+		Nav:         navItems,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.docTmpl.ExecuteTemplate(w, "base.html", data); err != nil {
@@ -145,7 +150,7 @@ func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, 
 	}
 }
 
-func (s *Server) serveDirPage(w http.ResponseWriter, gr *gitstore.Repo, hash plumbing.Hash, repoBase, repoName, dirPath, ref string) {
+func (s *Server) serveDirPage(w http.ResponseWriter, gr *gitstore.Repo, hash plumbing.Hash, repoBase, repoName, dirPath, ref string, navItems []nav.Item) {
 	entries, err := gr.ReadTree(hash, dirPath)
 	if err != nil {
 		httpError(w, http.StatusNotFound, "not found: "+dirPath)
@@ -191,6 +196,7 @@ func (s *Server) serveDirPage(w http.ResponseWriter, gr *gitstore.Repo, hash plu
 		RepoBase:    repoBase,
 		RepoName:    repoName,
 		Ref:         ref,
+		Nav:         navItems,
 		currentPath: dirPath,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -214,6 +220,29 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if err := s.indexTmpl.ExecuteTemplate(w, "base.html", data); err != nil {
 		log.Printf("folio: render index: %v", err)
 	}
+}
+
+// loadNav loads navigation items for the repo. It first tries to read folio.yml
+// from the repo root; if absent or unparseable, it falls back to auto-generating
+// nav from the directory tree.
+func loadNav(gr *gitstore.Repo, hash plumbing.Hash) []nav.Item {
+	if data, err := gr.ReadBlob(hash, "folio.yml"); err == nil {
+		if _, items, err := nav.Parse(data); err == nil {
+			return items
+		}
+	}
+	walker := func(dirPath string) ([]nav.WalkEntry, error) {
+		entries, err := gr.ReadTree(hash, dirPath)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]nav.WalkEntry, len(entries))
+		for i, e := range entries {
+			result[i] = nav.WalkEntry{Name: e.Name, IsDir: e.IsDir}
+		}
+		return result, nil
+	}
+	return nav.AutoGenerate(walker, "")
 }
 
 // headingTitle extracts the text of the first # heading from Markdown source.

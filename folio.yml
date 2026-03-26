@@ -1,0 +1,6 @@
+title: Folio
+nav:
+  - Overview: docs/index.md
+  - Getting Started: docs/getting-started.md
+  - Configuration: docs/configuration.md
+  - Webhooks: docs/webhooks.md
