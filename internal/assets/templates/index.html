@@ -13,5 +13,15 @@
   {{else}}
   <p class="empty">No repositories configured. Add entries to <code>folio.toml</code>.</p>
   {{end}}
+  {{if .Locals}}
+  <h2>Local</h2>
+  <ul class="repo-list-items">
+    {{range .Locals}}
+    <li>
+      <a href="/local/{{.Label}}">{{.Label}}</a>
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
 </section>
 {{end}}
