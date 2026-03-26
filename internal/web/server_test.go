@@ -219,3 +219,101 @@ func TestHandleWebhook_NoSecret(t *testing.T) {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 }
+
+func makeTestLocalDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "README.md"), "# Local Hello\n\nThis is a local repo.\n")
+	writeTestFile(t, filepath.Join(dir, "docs", "guide.md"), "# Guide\n\nSome content.\n")
+	return dir
+}
+
+func makeTestServerWithLocal(t *testing.T, localDir string) *httptest.Server {
+	t.Helper()
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{Addr: ":0"},
+		Cache:  config.CacheConfig{Dir: t.TempDir()},
+		Locals: []config.LocalConfig{
+			{Label: "testlocal", Path: localDir},
+		},
+	}
+
+	store := gitstore.New(cfg)
+	if err := store.OpenLocals(); err != nil {
+		t.Fatalf("OpenLocals: %v", err)
+	}
+
+	staticFS, _ := fs.Sub(assets.StaticFS, "static")
+	srv, err := web.New(cfg, store, assets.TemplateFS, staticFS)
+	if err != nil {
+		t.Fatalf("web.New: %v", err)
+	}
+
+	return httptest.NewServer(srv.Handler())
+}
+
+func TestHandleLocalDoc_MarkdownRender(t *testing.T) {
+	localDir := makeTestLocalDir(t)
+	ts := makeTestServerWithLocal(t, localDir)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/local/testlocal/README.md")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "This is a local repo") {
+		t.Errorf("body missing expected content; got: %q", string(body)[:min(300, len(body))])
+	}
+}
+
+func TestHandleLocalDoc_DirectoryListing(t *testing.T) {
+	localDir := makeTestLocalDir(t)
+	ts := makeTestServerWithLocal(t, localDir)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/local/testlocal")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestHandleLocalDoc_NotFound(t *testing.T) {
+	localDir := makeTestLocalDir(t)
+	ts := makeTestServerWithLocal(t, localDir)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/local/testlocal/nonexistent.md")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestHandleLocalDoc_LabelNotRegistered(t *testing.T) {
+	localDir := makeTestLocalDir(t)
+	ts := makeTestServerWithLocal(t, localDir)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/local/nolabel/README.md")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+}

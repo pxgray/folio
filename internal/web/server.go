@@ -76,6 +76,9 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/{host}/{owner}/{repo}", s.handleDoc)
 	r.Get("/{host}/{owner}/{repo}/*", s.handleDoc)
 
+	r.Get("/local/{label}", s.handleLocalDoc)
+	r.Get("/local/{label}/*", s.handleLocalDoc)
+
 	return r
 }
 
