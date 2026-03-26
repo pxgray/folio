@@ -59,6 +59,9 @@ func (s *Store) EnsureCloned(ctx context.Context) error {
 // Should be called once at startup.
 func (s *Store) OpenLocals() error {
 	for _, lc := range s.cfg.Locals {
+		if _, exists := s.locals[lc.Label]; exists {
+			return fmt.Errorf("local repo: duplicate label %q", lc.Label)
+		}
 		if _, err := os.Stat(lc.Path); err != nil {
 			return fmt.Errorf("local repo %q: %w", lc.Label, err)
 		}

@@ -157,3 +157,18 @@ func TestValidateLocalMissingPath(t *testing.T) {
 		t.Error("expected error for missing path, got nil")
 	}
 }
+
+func TestValidateLocalInvalidLabel(t *testing.T) {
+	f, err := os.CreateTemp("", "folio-config-*.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	_, _ = f.WriteString("[[local]]\nlabel = \"foo/bar\"\npath = \"/tmp/x\"\n")
+	f.Close()
+
+	_, err = Load(f.Name())
+	if err == nil {
+		t.Error("expected error for label with path separator, got nil")
+	}
+}

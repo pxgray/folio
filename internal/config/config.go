@@ -117,6 +117,9 @@ func (c *Config) validate() error {
 		if l.Label == "" {
 			return fmt.Errorf("config: locals[%d]: label is required", i)
 		}
+		if strings.ContainsAny(l.Label, "/\\ \t\n") {
+			return fmt.Errorf("config: locals[%d]: label %q must not contain path separators or whitespace", i, l.Label)
+		}
 		if l.Path == "" {
 			return fmt.Errorf("config: locals[%d]: path is required", i)
 		}

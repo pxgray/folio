@@ -2,9 +2,11 @@ package gitstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
 )
@@ -26,9 +28,13 @@ func (r *LocalRepo) ResolveRef(_ context.Context, _ string) (plumbing.Hash, erro
 
 // ReadBlob reads the file at path relative to the repo root.
 func (r *LocalRepo) ReadBlob(_ plumbing.Hash, path string) ([]byte, error) {
-	data, err := os.ReadFile(filepath.Join(r.root, path))
+	abs := filepath.Join(r.root, path)
+	if !strings.HasPrefix(abs, r.root+string(filepath.Separator)) && abs != r.root {
+		return nil, ErrNotFound
+	}
+	data, err := os.ReadFile(abs)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("read %s: %w", path, err)
@@ -39,10 +45,13 @@ func (r *LocalRepo) ReadBlob(_ plumbing.Hash, path string) ([]byte, error) {
 // ReadTree lists the directory at path relative to the repo root.
 // If path is empty, the root directory is listed.
 func (r *LocalRepo) ReadTree(_ plumbing.Hash, path string) ([]TreeEntry, error) {
-	dir := filepath.Join(r.root, path)
-	entries, err := os.ReadDir(dir)
+	abs := filepath.Join(r.root, path)
+	if !strings.HasPrefix(abs, r.root+string(filepath.Separator)) && abs != r.root {
+		return nil, ErrNotFound
+	}
+	entries, err := os.ReadDir(abs)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("readdir %s: %w", path, err)
