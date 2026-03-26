@@ -1,0 +1,17 @@
+{{template "base.html" .}}
+{{define "content"}}
+<section class="repo-list">
+  <h1>Repositories</h1>
+  {{if .Repos}}
+  <ul class="repo-list-items">
+    {{range .Repos}}
+    <li>
+      <a href="/{{.Host}}/{{.Owner}}/{{.Repo}}">{{.Host}}/{{.Owner}}/{{.Repo}}</a>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="empty">No repositories configured. Add entries to <code>folio.toml</code>.</p>
+  {{end}}
+</section>
+{{end}}

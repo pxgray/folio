@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} — Folio</title>
+  <link rel="stylesheet" href="/-/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="topbar-brand" href="/">Folio</a>
+    {{if .RepoBase}}
+    <span class="topbar-sep">›</span>
+    <a class="topbar-repo" href="{{.RepoBase}}">{{.RepoName}}</a>
+    {{end}}
+  </header>
+
+  {{if .Breadcrumbs}}
+  <nav class="breadcrumbs" aria-label="breadcrumb">
+    {{range .Breadcrumbs}}<a href="{{.URL}}">{{.Name}}</a><span class="bc-sep">/</span>{{end}}
+  </nav>
+  {{end}}
+
+  <main>
+    {{block "content" .}}{{end}}
+  </main>
+
+  <footer class="footer">
+    <a href="https://github.com/pxgray/folio">Folio</a>
+  </footer>
+</body>
+</html>

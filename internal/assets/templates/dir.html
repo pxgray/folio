@@ -1,0 +1,18 @@
+{{template "base.html" .}}
+{{define "content"}}
+<section class="dirlist-section">
+  <ul class="dirlist">
+    {{range .Entries}}
+    <li class="dirlist-entry {{if .IsDir}}is-dir{{else}}is-file{{end}}">
+      <a href="{{$.EntryURL .Name .IsDir}}">{{.Name}}{{if .IsDir}}/{{end}}</a>
+      {{if not .IsDir}}<span class="entry-size">{{.Size | formatSize}}</span>{{end}}
+    </li>
+    {{end}}
+  </ul>
+</section>
+{{if .IndexHTML}}
+<article class="doc index-doc">
+  {{.IndexHTML}}
+</article>
+{{end}}
+{{end}}

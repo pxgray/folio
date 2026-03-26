@@ -1,0 +1,208 @@
+package web_test
+
+import (
+	"io/fs"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/go-git/go-git/v5"
+	gitconfig "github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	_ "github.com/go-git/go-git/v5/plumbing/transport/file" // register file:// transport
+	"github.com/pxgray/folio/internal/assets"
+	"github.com/pxgray/folio/internal/config"
+	"github.com/pxgray/folio/internal/gitstore"
+	"github.com/pxgray/folio/internal/web"
+)
+
+// makeTestBareRepo creates a temp bare repo with a README.md and docs/index.md.
+func makeTestBareRepo(t *testing.T) string {
+	t.Helper()
+	workDir := t.TempDir()
+	bareDir := t.TempDir()
+
+	work, err := git.PlainInit(workDir, false)
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	wt, _ := work.Worktree()
+
+	writeTestFile(t, filepath.Join(workDir, "README.md"), "# Hello\n\nWelcome to Folio.\n")
+	writeTestFile(t, filepath.Join(workDir, "docs/index.md"), "# Docs\n\n[Setup](setup.md)\n")
+	writeTestFile(t, filepath.Join(workDir, "docs/setup.md"), "# Setup\n\nRun `folio config.toml`.\n")
+	writeTestFile(t, filepath.Join(workDir, "static/logo.png"), "\x89PNG\r\n\x1a\n")
+
+	_ = wt.AddGlob(".")
+	_, err = wt.Commit("init", &git.CommitOptions{
+		Author: &object.Signature{Name: "t", Email: "t@t.com"},
+	})
+	if err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	git.PlainInit(bareDir, true)
+	work.CreateRemote(&gitconfig.RemoteConfig{Name: "origin", URLs: []string{bareDir}})
+	if err := work.Push(&git.PushOptions{RemoteName: "origin"}); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	return bareDir
+}
+
+func writeTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func makeTestServer(t *testing.T, bareDir string) *httptest.Server {
+	t.Helper()
+	cacheDir := t.TempDir()
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{Addr: ":0"},
+		Cache:  config.CacheConfig{Dir: cacheDir},
+		Repos: []config.RepoConfig{
+			{
+				Host:   "example.com",
+				Owner:  "testuser",
+				Repo:   "testrepo",
+				Remote: "file://" + bareDir,
+			},
+		},
+	}
+
+	store := gitstore.New(cfg)
+	if err := store.EnsureCloned(t.Context()); err != nil {
+		t.Fatalf("EnsureCloned: %v", err)
+	}
+
+	staticFS, _ := fs.Sub(assets.StaticFS, "static")
+	srv, err := web.New(cfg, store, assets.TemplateFS, staticFS)
+	if err != nil {
+		t.Fatalf("web.New: %v", err)
+	}
+
+	return httptest.NewServer(srv.Handler())
+}
+
+func TestHandleDoc_MarkdownRender(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	ts := makeTestServer(t, bareDir)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/example.com/testuser/testrepo/README.md")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	ct := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html", ct)
+	}
+}
+
+func TestHandleDoc_DirectoryListing(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	ts := makeTestServer(t, bareDir)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/example.com/testuser/testrepo")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestHandleRaw(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	ts := makeTestServer(t, bareDir)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/example.com/testuser/testrepo/-/raw/static/logo.png")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	ct := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "image/png") {
+		t.Errorf("Content-Type = %q, want image/png", ct)
+	}
+}
+
+func TestHandleDoc_NotFound(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	ts := makeTestServer(t, bareDir)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/example.com/testuser/testrepo/nonexistent.md")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestHandleDoc_RepoNotRegistered(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	ts := makeTestServer(t, bareDir)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/example.com/nobody/norepo/README.md")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestHandleIndex(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	ts := makeTestServer(t, bareDir)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestHandleWebhook_NoSecret(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	ts := makeTestServer(t, bareDir)
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/example.com/testuser/testrepo/-/webhook", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+}
