@@ -34,7 +34,6 @@ type dirData struct {
 	RepoName    string
 	Ref         string
 	Nav         []nav.Item
-	// currentPath is the dir path within the repo, used to build entry URLs.
 	currentPath string
 }
 
@@ -56,11 +55,9 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 	host := chi.URLParam(r, "host")
 	owner := chi.URLParam(r, "owner")
 	repo := chi.URLParam(r, "repo")
-	// chi wildcard is stored as "*"
 	filePath := strings.TrimPrefix(chi.URLParam(r, "*"), "/")
 	ref := r.URL.Query().Get("ref")
 
-	// Normalise trailing slash: redirect to clean URL.
 	if len(r.URL.Path) > 1 && strings.HasSuffix(r.URL.Path, "/") {
 		clean := strings.TrimRight(r.URL.Path, "/")
 		if ref != "" {
@@ -80,7 +77,39 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash, err := gr.ResolveRef(r.Context(), ref)
+	repoBase := "/" + host + "/" + owner + "/" + repo
+	repoName := host + "/" + owner + "/" + repo
+	s.serveRepo(w, r, gr, ref, repoBase, repoName, filePath, true)
+}
+
+func (s *Server) handleLocalDoc(w http.ResponseWriter, r *http.Request) {
+	label := chi.URLParam(r, "label")
+	filePath := strings.TrimPrefix(chi.URLParam(r, "*"), "/")
+
+	if len(r.URL.Path) > 1 && strings.HasSuffix(r.URL.Path, "/") {
+		http.Redirect(w, r, strings.TrimRight(r.URL.Path, "/"), http.StatusMovedPermanently)
+		return
+	}
+
+	gr, err := s.store.GetLocal(label)
+	if err != nil {
+		if errors.Is(err, gitstore.ErrNotRegistered) {
+			httpError(w, http.StatusNotFound, "local repo not found: "+label)
+			return
+		}
+		httpError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	repoBase := "/local/" + label
+	repoName := "local/" + label
+	s.serveRepo(w, r, gr, "", repoBase, repoName, filePath, false)
+}
+
+// serveRepo resolves the ref, loads navigation, and routes to a markdown page,
+// directory page, or raw redirect. If allowRaw is false, non-.md files return 404.
+func (s *Server) serveRepo(w http.ResponseWriter, r *http.Request, repo gitstore.Repository, ref, repoBase, repoName, filePath string, allowRaw bool) {
+	hash, err := repo.ResolveRef(r.Context(), ref)
 	if err != nil {
 		if errors.Is(err, gitstore.ErrNotFound) {
 			httpError(w, http.StatusNotFound, "ref not found: "+ref)
@@ -90,24 +119,25 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repoBase := "/" + host + "/" + owner + "/" + repo
-	repoName := host + "/" + owner + "/" + repo
-	navItems := loadNav(gr, hash)
+	navItems := loadNav(repo, hash)
 
 	if filePath == "" {
-		s.serveDirPage(w, gr, hash, repoBase, repoName, "", ref, navItems)
+		s.serveDirPage(w, repo, hash, repoBase, repoName, "", ref, navItems)
 		return
 	}
 
-	// Try reading as a blob first.
-	blob, err := gr.ReadBlob(hash, filePath)
+	blob, err := repo.ReadBlob(hash, filePath)
 	if err == nil {
 		if strings.HasSuffix(filePath, ".md") {
 			s.serveMarkdownPage(w, blob, repoBase, repoName, filePath, ref, navItems)
 			return
 		}
-		rawURL := repoBase + "/-/raw/" + filePath + refQuery(ref)
-		http.Redirect(w, r, rawURL, http.StatusFound)
+		if allowRaw {
+			rawURL := repoBase + "/-/raw/" + filePath + refQuery(ref)
+			http.Redirect(w, r, rawURL, http.StatusFound)
+			return
+		}
+		httpError(w, http.StatusNotFound, "not found: "+filePath)
 		return
 	}
 	if !errors.Is(err, gitstore.ErrNotFound) {
@@ -115,10 +145,9 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Try as a directory.
-	_, treeErr := gr.ReadTree(hash, filePath)
+	_, treeErr := repo.ReadTree(hash, filePath)
 	if treeErr == nil {
-		s.serveDirPage(w, gr, hash, repoBase, repoName, filePath, ref, navItems)
+		s.serveDirPage(w, repo, hash, repoBase, repoName, filePath, ref, navItems)
 		return
 	}
 
@@ -150,14 +179,13 @@ func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, 
 	}
 }
 
-func (s *Server) serveDirPage(w http.ResponseWriter, gr *gitstore.Repo, hash plumbing.Hash, repoBase, repoName, dirPath, ref string, navItems []nav.Item) {
-	entries, err := gr.ReadTree(hash, dirPath)
+func (s *Server) serveDirPage(w http.ResponseWriter, repo gitstore.Repository, hash plumbing.Hash, repoBase, repoName, dirPath, ref string, navItems []nav.Item) {
+	entries, err := repo.ReadTree(hash, dirPath)
 	if err != nil {
 		httpError(w, http.StatusNotFound, "not found: "+dirPath)
 		return
 	}
 
-	// Sort: directories first, then alphabetically.
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].IsDir != entries[j].IsDir {
 			return entries[i].IsDir
@@ -165,7 +193,6 @@ func (s *Server) serveDirPage(w http.ResponseWriter, gr *gitstore.Repo, hash plu
 		return entries[i].Name < entries[j].Name
 	})
 
-	// Render index.md if present.
 	var indexHTML template.HTML
 	for _, e := range entries {
 		if e.Name == "index.md" && !e.IsDir {
@@ -175,7 +202,7 @@ func (s *Server) serveDirPage(w http.ResponseWriter, gr *gitstore.Repo, hash plu
 			} else {
 				indexPath = dirPath + "/index.md"
 			}
-			src, err := gr.ReadBlob(hash, indexPath)
+			src, err := repo.ReadBlob(hash, indexPath)
 			if err == nil {
 				indexHTML, _ = render.Render(src, repoBase, indexPath, ref)
 			}
@@ -209,12 +236,14 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Title       string
 		Repos       interface{}
+		Locals      interface{}
 		RepoBase    string
 		RepoName    string
 		Breadcrumbs []breadcrumb
 	}{
-		Title: "Folio",
-		Repos: s.store.Repos(),
+		Title:  "Folio",
+		Repos:  s.store.Repos(),
+		Locals: s.store.Locals(),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.indexTmpl.ExecuteTemplate(w, "base.html", data); err != nil {
@@ -225,14 +254,14 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 // loadNav loads navigation items for the repo. It first tries to read folio.yml
 // from the repo root; if absent or unparseable, it falls back to auto-generating
 // nav from the directory tree.
-func loadNav(gr *gitstore.Repo, hash plumbing.Hash) []nav.Item {
-	if data, err := gr.ReadBlob(hash, "folio.yml"); err == nil {
+func loadNav(repo gitstore.Repository, hash plumbing.Hash) []nav.Item {
+	if data, err := repo.ReadBlob(hash, "folio.yml"); err == nil {
 		if _, items, err := nav.Parse(data); err == nil {
 			return items
 		}
 	}
 	walker := func(dirPath string) ([]nav.WalkEntry, error) {
-		entries, err := gr.ReadTree(hash, dirPath)
+		entries, err := repo.ReadTree(hash, dirPath)
 		if err != nil {
 			return nil, err
 		}
