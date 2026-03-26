@@ -38,6 +38,13 @@ func main() {
 		log.Fatalf("folio: %v", err)
 	}
 
+	if len(cfg.Locals) > 0 {
+		log.Printf("folio: registering %d local repo(s)...", len(cfg.Locals))
+		if err := store.OpenLocals(); err != nil {
+			log.Fatalf("folio: %v", err)
+		}
+	}
+
 	// Expose the static/ subdirectory of the embedded FS.
 	staticFS, err := fs.Sub(assets.StaticFS, "static")
 	if err != nil {
