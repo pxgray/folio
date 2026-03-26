@@ -1,0 +1,23 @@
+# Build output
+bin/
+
+# Local cache (bare clones)
+.cache/
+
+# Local config override (keep folio.toml as the example, ignore local secrets)
+folio.local.toml
+
+# Go test cache / coverage
+*.test
+*.out
+coverage.html
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
