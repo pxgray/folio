@@ -28,7 +28,6 @@ type docData struct {
 type dirData struct {
 	Title       string
 	Entries     []gitstore.TreeEntry
-	IndexHTML   template.HTML
 	Breadcrumbs []breadcrumb
 	RepoBase    string
 	RepoName    string
@@ -120,6 +119,9 @@ func (s *Server) serveRepo(w http.ResponseWriter, r *http.Request, repo gitstore
 	}
 
 	navItems := loadNav(repo, hash)
+	if !navCoversPath(navItems, filePath) {
+		navItems = nil
+	}
 
 	if filePath == "" {
 		s.serveDirPage(w, repo, hash, repoBase, repoName, "", ref, navItems)
@@ -193,18 +195,16 @@ func (s *Server) serveDirPage(w http.ResponseWriter, repo gitstore.Repository, h
 		return entries[i].Name < entries[j].Name
 	})
 
-	var indexHTML template.HTML
+	// If index.md exists, render it as a doc page instead of the directory listing.
 	for _, e := range entries {
 		if e.Name == "index.md" && !e.IsDir {
-			var indexPath string
-			if dirPath == "" {
-				indexPath = "index.md"
-			} else {
+			indexPath := "index.md"
+			if dirPath != "" {
 				indexPath = dirPath + "/index.md"
 			}
-			src, err := repo.ReadBlob(hash, indexPath)
-			if err == nil {
-				indexHTML, _ = render.Render(src, repoBase, indexPath, ref)
+			if src, err := repo.ReadBlob(hash, indexPath); err == nil {
+				s.serveMarkdownPage(w, src, repoBase, repoName, indexPath, ref, navItems)
+				return
 			}
 			break
 		}
@@ -218,7 +218,6 @@ func (s *Server) serveDirPage(w http.ResponseWriter, repo gitstore.Repository, h
 	data := dirData{
 		Title:       title,
 		Entries:     entries,
-		IndexHTML:   indexHTML,
 		Breadcrumbs: buildBreadcrumbs(repoBase, dirPath, ref),
 		RepoBase:    repoBase,
 		RepoName:    repoName,
@@ -240,6 +239,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		RepoBase    string
 		RepoName    string
 		Breadcrumbs []breadcrumb
+		Nav         []nav.Item
 	}{
 		Title:  "Folio",
 		Repos:  s.store.Repos(),
@@ -249,6 +249,26 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if err := s.indexTmpl.ExecuteTemplate(w, "base.html", data); err != nil {
 		log.Printf("folio: render index: %v", err)
 	}
+}
+
+// navCoversPath reports whether filePath is explicitly covered by the nav items —
+// either as an exact leaf match or as a directory that contains at least one leaf.
+func navCoversPath(items []nav.Item, filePath string) bool {
+	for _, item := range items {
+		if item.Path != "" {
+			if item.Path == filePath {
+				return true
+			}
+			// filePath is a directory ancestor of this leaf.
+			if filePath != "" && strings.HasPrefix(item.Path, filePath+"/") {
+				return true
+			}
+		}
+		if navCoversPath(item.Children, filePath) {
+			return true
+		}
+	}
+	return false
 }
 
 // loadNav loads navigation items for the repo. It first tries to read folio.yml

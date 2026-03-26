@@ -37,6 +37,10 @@ func (r *LocalRepo) ReadBlob(_ plumbing.Hash, path string) ([]byte, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrNotFound
 		}
+		// Directories are not blobs (os.ReadFile returns EISDIR on Linux).
+		if fi, statErr := os.Stat(abs); statErr == nil && fi.IsDir() {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 	return data, nil
