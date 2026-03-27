@@ -36,7 +36,8 @@ type dirData struct {
 	RepoName    string
 	Ref         string
 	Nav         []nav.Item
-	currentPath string
+	CurrentPath string // exported for template active-nav comparison
+	currentPath string // used by EntryURL
 }
 
 // EntryURL builds the URL for a directory entry (called from dir.html).
@@ -178,6 +179,7 @@ func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, 
 		RepoName:    repoName,
 		Ref:         ref,
 		Nav:         navItems,
+		CurrentPath: filePath,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.docTmpl.ExecuteTemplate(w, "base.html", data); err != nil {
@@ -227,6 +229,7 @@ func (s *Server) serveDirPage(w http.ResponseWriter, repo gitstore.Repository, h
 		RepoName:    repoName,
 		Ref:         ref,
 		Nav:         navItems,
+		CurrentPath: dirPath,
 		currentPath: dirPath,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
