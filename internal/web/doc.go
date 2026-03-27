@@ -18,6 +18,7 @@ import (
 type docData struct {
 	Title       string
 	Content     template.HTML
+	TOC         template.HTML
 	Breadcrumbs []breadcrumb
 	RepoBase    string
 	RepoName    string
@@ -28,6 +29,7 @@ type docData struct {
 type dirData struct {
 	Title       string
 	Entries     []gitstore.TreeEntry
+	TOC         template.HTML
 	Breadcrumbs []breadcrumb
 	RepoBase    string
 	RepoName    string
@@ -157,7 +159,7 @@ func (s *Server) serveRepo(w http.ResponseWriter, r *http.Request, repo gitstore
 }
 
 func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, repoName, filePath, ref string, navItems []nav.Item) {
-	content, err := render.Render(src, repoBase, filePath, ref)
+	result, err := render.Render(src, repoBase, filePath, ref)
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "render error: "+err.Error())
 		return
@@ -168,7 +170,8 @@ func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, 
 	}
 	data := docData{
 		Title:       title,
-		Content:     content,
+		Content:     result.Content,
+		TOC:         result.TOC,
 		Breadcrumbs: buildBreadcrumbs(repoBase, filePath, ref),
 		RepoBase:    repoBase,
 		RepoName:    repoName,
@@ -236,6 +239,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		Title       string
 		Repos       interface{}
 		Locals      interface{}
+		TOC         template.HTML
 		RepoBase    string
 		RepoName    string
 		Breadcrumbs []breadcrumb

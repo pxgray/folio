@@ -21,7 +21,7 @@
   </nav>
   {{end}}
 
-  <div class="page-body{{if .Nav}} has-sidebar{{end}}">
+  <div class="page-body{{if .Nav}} has-sidebar{{end}}{{if .TOC}} has-toc{{end}}">
     {{if .Nav}}
     <nav class="sidebar" aria-label="navigation">
       <ul class="nav-tree">
@@ -43,9 +43,17 @@
     </nav>
     {{end}}
 
-    <main>
-      {{block "content" .}}{{end}}
-    </main>
+    <div class="main-wrap">
+      <main>
+        {{block "content" .}}{{end}}
+      </main>
+      {{if .TOC}}
+      <aside class="toc-rail" aria-label="table of contents">
+        <p class="toc-title">On this page</p>
+        {{.TOC}}
+      </aside>
+      {{end}}
+    </div>
   </div>
 
   <footer class="footer">

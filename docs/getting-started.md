@@ -1,3 +1,6 @@
+---
+toc: true
+---
 # Getting started
 
 ## Prerequisites

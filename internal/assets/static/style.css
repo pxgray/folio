@@ -130,6 +130,13 @@ body {
 }
 
 /* ── Main content ────────────────────────────────────── */
+.main-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+}
+
 main {
   flex: 1;
   min-width: 0;
@@ -206,6 +213,59 @@ main {
 
 .doc img { max-width: 100%; height: auto; border-radius: 4px; }
 .doc hr { border: none; border-top: 1px solid var(--color-border); margin: 2rem 0; }
+
+/* ── TOC rail (right sidebar) ────────────────────────── */
+.toc-rail {
+  width: 200px;
+  flex-shrink: 0;
+  padding: 2rem 1rem 2rem 1.5rem;
+  border-left: 1px solid var(--color-border);
+  align-self: flex-start;
+  position: sticky;
+  top: 0;
+  font-size: 0.85rem;
+}
+
+.toc-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-muted);
+}
+
+.toc-nav ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.toc-nav li { margin: 0.25rem 0; }
+
+.toc-nav ul ul { padding-left: 0.75rem; }
+
+.toc-nav a {
+  color: var(--color-text);
+  text-decoration: none;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  display: block;
+}
+
+.toc-nav a:hover { color: var(--color-link); }
+
+@media (max-width: 960px) {
+  .page-body.has-toc .main-wrap { flex-direction: column; }
+  .toc-rail {
+    order: -1;
+    width: auto;
+    border-left: none;
+    border-bottom: 1px solid var(--color-border);
+    padding: 1rem 1.5rem;
+    position: static;
+  }
+}
 
 /* ── Directory listing ───────────────────────────────── */
 .dirlist-section { margin-bottom: 2rem; }

@@ -1,3 +1,6 @@
+---
+toc: true
+---
 # Configuration reference
 
 Folio is configured via a [TOML](https://toml.io) file, typically named `folio.toml`.

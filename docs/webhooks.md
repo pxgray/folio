@@ -1,3 +1,6 @@
+---
+toc: true
+---
 # Webhook setup
 
 Webhooks let Folio update immediately when you push to a repo, rather than waiting for the TTL to expire.
