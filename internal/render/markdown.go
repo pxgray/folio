@@ -38,7 +38,7 @@ type Result struct {
 //   - filePath: path of the current file within the repo, e.g. "docs/setup.md"
 //   - ref:      ?ref= value; empty string means default branch
 //   - trusted:  when false, raw HTML in Markdown is escaped and output is
-//               sanitized via bluemonday; when true, raw HTML passes through
+//     sanitized via bluemonday; when true, raw HTML passes through
 func Render(src []byte, repoBase, filePath, ref string, trusted bool) (Result, error) {
 	rw := &LinkRewriter{RepoBase: repoBase, FilePath: filePath, Ref: ref}
 
