@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -49,7 +50,7 @@ func (d dirData) EntryURL(name string, isDir bool) string {
 		base = d.RepoBase + "/" + d.currentPath + "/" + name
 	}
 	if d.Ref != "" {
-		return base + "?ref=" + d.Ref
+		return base + "?ref=" + url.QueryEscape(d.Ref)
 	}
 	return base
 }
@@ -64,7 +65,7 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 	if len(r.URL.Path) > 1 && strings.HasSuffix(r.URL.Path, "/") {
 		clean := strings.TrimRight(r.URL.Path, "/")
 		if ref != "" {
-			clean += "?ref=" + ref
+			clean += "?ref=" + url.QueryEscape(ref)
 		}
 		http.Redirect(w, r, clean, http.StatusMovedPermanently)
 		return
@@ -80,9 +81,18 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var trusted bool
+	key := host + "/" + owner + "/" + repo
+	for _, rc := range s.cfg.Repos {
+		if rc.Key() == key {
+			trusted = rc.TrustedHTML
+			break
+		}
+	}
+
 	repoBase := "/" + host + "/" + owner + "/" + repo
 	repoName := host + "/" + owner + "/" + repo
-	s.serveRepo(w, r, gr, ref, repoBase, repoName, filePath, true)
+	s.serveRepo(w, r, gr, ref, repoBase, repoName, filePath, true, trusted)
 }
 
 func (s *Server) handleLocalDoc(w http.ResponseWriter, r *http.Request) {
@@ -104,14 +114,22 @@ func (s *Server) handleLocalDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var trusted bool
+	for _, lc := range s.cfg.Locals {
+		if lc.Label == label {
+			trusted = lc.TrustedHTML
+			break
+		}
+	}
+
 	repoBase := "/local/" + label
 	repoName := "local/" + label
-	s.serveRepo(w, r, gr, "", repoBase, repoName, filePath, false)
+	s.serveRepo(w, r, gr, "", repoBase, repoName, filePath, false, trusted)
 }
 
 // serveRepo resolves the ref, loads navigation, and routes to a markdown page,
 // directory page, or raw redirect. If allowRaw is false, non-.md files return 404.
-func (s *Server) serveRepo(w http.ResponseWriter, r *http.Request, repo gitstore.Repository, ref, repoBase, repoName, filePath string, allowRaw bool) {
+func (s *Server) serveRepo(w http.ResponseWriter, r *http.Request, repo gitstore.Repository, ref, repoBase, repoName, filePath string, allowRaw bool, trusted bool) {
 	hash, err := repo.ResolveRef(r.Context(), ref)
 	if err != nil {
 		if errors.Is(err, gitstore.ErrNotFound) {
@@ -128,14 +146,14 @@ func (s *Server) serveRepo(w http.ResponseWriter, r *http.Request, repo gitstore
 	}
 
 	if filePath == "" {
-		s.serveDirPage(w, repo, hash, repoBase, repoName, "", ref, navItems)
+		s.serveDirPage(w, repo, hash, repoBase, repoName, "", ref, navItems, trusted)
 		return
 	}
 
 	blob, err := repo.ReadBlob(hash, filePath)
 	if err == nil {
 		if strings.HasSuffix(filePath, ".md") {
-			s.serveMarkdownPage(w, blob, repoBase, repoName, filePath, ref, navItems)
+			s.serveMarkdownPage(w, blob, repoBase, repoName, filePath, ref, navItems, trusted)
 			return
 		}
 		if allowRaw {
@@ -153,15 +171,15 @@ func (s *Server) serveRepo(w http.ResponseWriter, r *http.Request, repo gitstore
 
 	_, treeErr := repo.ReadTree(hash, filePath)
 	if treeErr == nil {
-		s.serveDirPage(w, repo, hash, repoBase, repoName, filePath, ref, navItems)
+		s.serveDirPage(w, repo, hash, repoBase, repoName, filePath, ref, navItems, trusted)
 		return
 	}
 
 	httpError(w, http.StatusNotFound, "not found: "+filePath)
 }
 
-func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, repoName, filePath, ref string, navItems []nav.Item) {
-	result, err := render.Render(src, repoBase, filePath, ref)
+func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, repoName, filePath, ref string, navItems []nav.Item, trusted bool) {
+	result, err := render.Render(src, repoBase, filePath, ref, trusted)
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "render error: "+err.Error())
 		return
@@ -187,7 +205,7 @@ func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, 
 	}
 }
 
-func (s *Server) serveDirPage(w http.ResponseWriter, repo gitstore.Repository, hash plumbing.Hash, repoBase, repoName, dirPath, ref string, navItems []nav.Item) {
+func (s *Server) serveDirPage(w http.ResponseWriter, repo gitstore.Repository, hash plumbing.Hash, repoBase, repoName, dirPath, ref string, navItems []nav.Item, trusted bool) {
 	entries, err := repo.ReadTree(hash, dirPath)
 	if err != nil {
 		httpError(w, http.StatusNotFound, "not found: "+dirPath)
@@ -209,7 +227,7 @@ func (s *Server) serveDirPage(w http.ResponseWriter, repo gitstore.Repository, h
 				indexPath = dirPath + "/index.md"
 			}
 			if src, err := repo.ReadBlob(hash, indexPath); err == nil {
-				s.serveMarkdownPage(w, src, repoBase, repoName, indexPath, ref, navItems)
+				s.serveMarkdownPage(w, src, repoBase, repoName, indexPath, ref, navItems, trusted)
 				return
 			}
 			break

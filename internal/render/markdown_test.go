@@ -7,7 +7,7 @@ import (
 
 func TestRender_NoTOC(t *testing.T) {
 	src := []byte("# Hello\n\n## Section\n\nContent.")
-	result, err := Render(src, "/repo", "doc.md", "")
+	result, err := Render(src, "/repo", "doc.md", "", false)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -21,7 +21,7 @@ func TestRender_NoTOC(t *testing.T) {
 
 func TestRender_WithTOC(t *testing.T) {
 	src := []byte("---\ntoc: true\n---\n# Hello\n\n## Section One\n\n## Section Two\n")
-	result, err := Render(src, "/repo", "doc.md", "")
+	result, err := Render(src, "/repo", "doc.md", "", false)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestRender_WithTOC(t *testing.T) {
 
 func TestRender_TOCFalseExplicit(t *testing.T) {
 	src := []byte("---\ntoc: false\n---\n# Hello\n\n## Section\n")
-	result, err := Render(src, "/repo", "doc.md", "")
+	result, err := Render(src, "/repo", "doc.md", "", false)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
