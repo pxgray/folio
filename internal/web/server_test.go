@@ -61,35 +61,36 @@ func writeTestFile(t *testing.T, path, content string) {
 	}
 }
 
-func makeTestServer(t *testing.T, bareDir string) *httptest.Server {
+// makeTestServerForRepo builds a test server backed by a single bare repo.
+// repoName is the routing label used in URLs (e.g. "testrepo").
+func makeTestServerForRepo(t *testing.T, bareDir, repoName string) *httptest.Server {
 	t.Helper()
-	cacheDir := t.TempDir()
-
 	cfg := &config.Config{
 		Server: config.ServerConfig{Addr: ":0"},
-		Cache:  config.CacheConfig{Dir: cacheDir},
+		Cache:  config.CacheConfig{Dir: t.TempDir()},
 		Repos: []config.RepoConfig{
 			{
 				Host:   "example.com",
 				Owner:  "testuser",
-				Repo:   "testrepo",
+				Repo:   repoName,
 				Remote: "file://" + bareDir,
 			},
 		},
 	}
-
 	store := gitstore.New(cfg)
 	if err := store.EnsureCloned(t.Context()); err != nil {
 		t.Fatalf("EnsureCloned: %v", err)
 	}
-
 	staticFS, _ := fs.Sub(assets.StaticFS, "static")
 	srv, err := web.New(cfg, store, assets.TemplateFS, staticFS)
 	if err != nil {
 		t.Fatalf("web.New: %v", err)
 	}
-
 	return httptest.NewServer(srv.Handler())
+}
+
+func makeTestServer(t *testing.T, bareDir string) *httptest.Server {
+	return makeTestServerForRepo(t, bareDir, "testrepo")
 }
 
 func TestHandleDoc_MarkdownRender(t *testing.T) {
@@ -254,34 +255,7 @@ func makeTestBareRepoWithNav(t *testing.T) string {
 }
 
 func makeTestServerForNav(t *testing.T, bareDir string) *httptest.Server {
-	t.Helper()
-	cacheDir := t.TempDir()
-
-	cfg := &config.Config{
-		Server: config.ServerConfig{Addr: ":0"},
-		Cache:  config.CacheConfig{Dir: cacheDir},
-		Repos: []config.RepoConfig{
-			{
-				Host:   "example.com",
-				Owner:  "testuser",
-				Repo:   "navrepo",
-				Remote: "file://" + bareDir,
-			},
-		},
-	}
-
-	store := gitstore.New(cfg)
-	if err := store.EnsureCloned(t.Context()); err != nil {
-		t.Fatalf("EnsureCloned: %v", err)
-	}
-
-	staticFS, _ := fs.Sub(assets.StaticFS, "static")
-	srv, err := web.New(cfg, store, assets.TemplateFS, staticFS)
-	if err != nil {
-		t.Fatalf("web.New: %v", err)
-	}
-
-	return httptest.NewServer(srv.Handler())
+	return makeTestServerForRepo(t, bareDir, "navrepo")
 }
 
 func TestHandleDoc_ActiveNavItem(t *testing.T) {
@@ -460,30 +434,7 @@ func makeTestBareRepoWithHTML(t *testing.T) string {
 }
 
 func makeTestServerForHTML(t *testing.T, bareDir string) *httptest.Server {
-	t.Helper()
-	cacheDir := t.TempDir()
-	cfg := &config.Config{
-		Server: config.ServerConfig{Addr: ":0"},
-		Cache:  config.CacheConfig{Dir: cacheDir},
-		Repos: []config.RepoConfig{
-			{
-				Host:   "example.com",
-				Owner:  "testuser",
-				Repo:   "htmlrepo",
-				Remote: "file://" + bareDir,
-			},
-		},
-	}
-	store := gitstore.New(cfg)
-	if err := store.EnsureCloned(t.Context()); err != nil {
-		t.Fatalf("EnsureCloned: %v", err)
-	}
-	staticFS, _ := fs.Sub(assets.StaticFS, "static")
-	srv, err := web.New(cfg, store, assets.TemplateFS, staticFS)
-	if err != nil {
-		t.Fatalf("web.New: %v", err)
-	}
-	return httptest.NewServer(srv.Handler())
+	return makeTestServerForRepo(t, bareDir, "htmlrepo")
 }
 
 func TestHandleRaw_HTMLServedAsPlainText(t *testing.T) {
