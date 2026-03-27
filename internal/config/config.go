@@ -32,11 +32,13 @@ type RepoConfig struct {
 	Repo          string `toml:"repo"`
 	Remote        string `toml:"remote"`
 	WebhookSecret string `toml:"webhook_secret"`
+	TrustedHTML   bool   `toml:"trusted_html"`
 }
 
 type LocalConfig struct {
-	Label string `toml:"label"`
-	Path  string `toml:"path"`
+	Label       string `toml:"label"`
+	Path        string `toml:"path"`
+	TrustedHTML bool   `toml:"trusted_html"`
 }
 
 // Key returns the canonical string key for a repo: "host/owner/repo".
