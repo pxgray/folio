@@ -24,6 +24,7 @@ type docData struct {
 	RepoName    string
 	Ref         string
 	Nav         []nav.Item
+	CurrentPath string
 }
 
 type dirData struct {
