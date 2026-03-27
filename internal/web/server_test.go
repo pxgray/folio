@@ -220,6 +220,93 @@ func TestHandleWebhook_NoSecret(t *testing.T) {
 	}
 }
 
+// makeTestBareRepoWithNav creates a temp bare repo that includes a folio.yml nav
+// and a docs/guide.md file, so the active nav indicator can be tested.
+func makeTestBareRepoWithNav(t *testing.T) string {
+	t.Helper()
+	workDir := t.TempDir()
+	bareDir := t.TempDir()
+
+	work, err := git.PlainInit(workDir, false)
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	wt, _ := work.Worktree()
+
+	writeTestFile(t, filepath.Join(workDir, "docs/guide.md"), "# Guide\n\nSome guidance.\n")
+	writeTestFile(t, filepath.Join(workDir, "folio.yml"),
+		"title: Test\nnav:\n  - Guide: docs/guide.md\n")
+
+	_ = wt.AddGlob(".")
+	_, err = wt.Commit("init", &git.CommitOptions{
+		Author: &object.Signature{Name: "t", Email: "t@t.com"},
+	})
+	if err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	git.PlainInit(bareDir, true)
+	work.CreateRemote(&gitconfig.RemoteConfig{Name: "origin", URLs: []string{bareDir}})
+	if err := work.Push(&git.PushOptions{RemoteName: "origin"}); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	return bareDir
+}
+
+func makeTestServerForNav(t *testing.T, bareDir string) *httptest.Server {
+	t.Helper()
+	cacheDir := t.TempDir()
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{Addr: ":0"},
+		Cache:  config.CacheConfig{Dir: cacheDir},
+		Repos: []config.RepoConfig{
+			{
+				Host:   "example.com",
+				Owner:  "testuser",
+				Repo:   "navrepo",
+				Remote: "file://" + bareDir,
+			},
+		},
+	}
+
+	store := gitstore.New(cfg)
+	if err := store.EnsureCloned(t.Context()); err != nil {
+		t.Fatalf("EnsureCloned: %v", err)
+	}
+
+	staticFS, _ := fs.Sub(assets.StaticFS, "static")
+	srv, err := web.New(cfg, store, assets.TemplateFS, staticFS)
+	if err != nil {
+		t.Fatalf("web.New: %v", err)
+	}
+
+	return httptest.NewServer(srv.Handler())
+}
+
+func TestHandleDoc_ActiveNavItem(t *testing.T) {
+	bareDir := makeTestBareRepoWithNav(t)
+	ts := makeTestServerForNav(t, bareDir)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/example.com/testuser/navrepo/docs/guide.md")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	wantActive := `href="/example.com/testuser/navrepo/docs/guide.md" class="active"`
+	if !strings.Contains(bodyStr, wantActive) {
+		t.Errorf("rendered page missing active nav class on expected link; body snippet: %q",
+			bodyStr[:min(500, len(bodyStr))])
+	}
+}
+
 func makeTestLocalDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}} — Folio</title>
+  <link rel="stylesheet" href="/-/static/pico.min.css">
   <link rel="stylesheet" href="/-/static/style.css">
 </head>
 <body>
@@ -13,15 +14,11 @@
     <span class="topbar-sep">›</span>
     <a class="topbar-repo" href="{{.RepoBase}}">{{.RepoName}}</a>
     {{end}}
+    <span class="topbar-spacer"></span>
+    <button class="theme-toggle" onclick="toggleTheme(); this.blur()" id="theme-btn">☾</button>
   </header>
 
-  {{if .Breadcrumbs}}
-  <nav class="breadcrumbs" aria-label="breadcrumb">
-    {{range .Breadcrumbs}}<a href="{{.URL}}">{{.Name}}</a><span class="bc-sep">/</span>{{end}}
-  </nav>
-  {{end}}
-
-  <div class="page-body{{if .Nav}} has-sidebar{{end}}{{if .TOC}} has-toc{{end}}">
+  <div class="page-body">
     {{if .Nav}}
     <nav class="sidebar" aria-label="navigation">
       <ul class="nav-tree">
@@ -31,33 +28,62 @@
           <span class="nav-section-label">{{.Label}}</span>
           <ul class="nav-children">
             {{range .Children}}
-            <li class="nav-leaf"><a href="{{$.RepoBase}}/{{.Path}}{{if $.Ref}}?ref={{$.Ref}}{{end}}">{{.Label}}</a></li>
+            <li class="nav-leaf"><a href="{{$.RepoBase}}/{{.Path}}{{if $.Ref}}?ref={{$.Ref}}{{end}}"{{if eq $.CurrentPath .Path}} class="active"{{end}}>{{.Label}}</a></li>
             {{end}}
           </ul>
         </li>
         {{else}}
-        <li class="nav-leaf"><a href="{{$.RepoBase}}/{{.Path}}{{if $.Ref}}?ref={{$.Ref}}{{end}}">{{.Label}}</a></li>
+        <li class="nav-leaf"><a href="{{$.RepoBase}}/{{.Path}}{{if $.Ref}}?ref={{$.Ref}}{{end}}"{{if eq $.CurrentPath .Path}} class="active"{{end}}>{{.Label}}</a></li>
         {{end}}
         {{end}}
       </ul>
     </nav>
     {{end}}
 
-    <div class="main-wrap">
-      <main>
-        {{block "content" .}}{{end}}
-      </main>
+    <div class="content-row">
+      <div class="main-inner">
+        {{if .Breadcrumbs}}
+        <nav class="breadcrumbs" aria-label="breadcrumb">
+          {{range $i, $crumb := .Breadcrumbs}}{{if gt $i 0}}<span class="bc-sep">/</span>{{end}}<a href="{{$crumb.URL}}">{{$crumb.Name}}</a>{{end}}
+        </nav>
+        {{end}}
+
+        <main>
+          {{block "content" .}}{{end}}
+        </main>
+      </div>
+
       {{if .TOC}}
       <aside class="toc-rail" aria-label="table of contents">
-        <p class="toc-title">On this page</p>
-        {{.TOC}}
+        <div class="toc-inner">
+          <p class="toc-title">On this page</p>
+          {{.TOC}}
+        </div>
       </aside>
       {{end}}
     </div>
   </div>
 
-  <footer class="footer">
+  <footer>
     <a href="https://github.com/pxgray/folio">Folio</a>
   </footer>
+
+  <script>
+    (function() {
+      const t = localStorage.getItem('theme');
+      if (t) {
+        document.documentElement.setAttribute('data-theme', t);
+        document.getElementById('theme-btn').textContent = t === 'dark' ? '☀' : '☾';
+      }
+    })();
+    function toggleTheme() {
+      const html = document.documentElement;
+      const isDark = html.getAttribute('data-theme') === 'dark';
+      const next = isDark ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      document.getElementById('theme-btn').textContent = isDark ? '☾' : '☀';
+    }
+  </script>
 </body>
 </html>
