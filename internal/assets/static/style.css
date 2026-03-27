@@ -179,6 +179,14 @@ footer { text-align: center; font-size: 0.8rem; color: var(--pico-muted-color); 
 .index-doc { margin-top: 2rem; }
 .dirlist-section { margin-bottom: 2rem; }
 
+/* ── Responsive layout ── */
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .toc-rail { display: none; }
+  main { padding: 1.5rem 1rem; }
+  .breadcrumbs { padding: 0.5rem 1rem; }
+}
+
 /* ── Repo list (index page) ── */
 .repo-list-items {
   list-style: none;
