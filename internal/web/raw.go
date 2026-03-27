@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -46,8 +47,12 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Detect content type from first 512 bytes.
+	// Detect content type from first 512 bytes, then override executable types.
 	ct := http.DetectContentType(blob)
+	switch strings.ToLower(filepath.Ext(filePath)) {
+	case ".html", ".htm", ".xhtml", ".svg", ".js", ".mjs":
+		ct = "text/plain; charset=utf-8"
+	}
 	w.Header().Set("Content-Type", ct)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(blob)
