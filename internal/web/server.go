@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -62,6 +63,7 @@ func New(cfg *config.Config, store *gitstore.Store, tmplFS embed.FS, staticFS fs
 // Handler returns the http.Handler with all routes registered.
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
+	r.Use(securityHeadersMiddleware)
 	r.Use(loggingMiddleware)
 
 	// Static assets under /-/static/ (clear namespace, can't conflict with /{host}/...).
@@ -106,7 +108,7 @@ func refQuery(ref string) string {
 	if ref == "" {
 		return ""
 	}
-	return "?ref=" + ref
+	return "?ref=" + url.QueryEscape(ref)
 }
 
 func formatSize(n int64) string {
@@ -118,6 +120,18 @@ func formatSize(n int64) string {
 	default:
 		return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
 	}
+}
+
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {
