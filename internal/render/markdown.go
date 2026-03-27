@@ -8,7 +8,6 @@ import (
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
@@ -42,9 +41,11 @@ type Result struct {
 func Render(src []byte, repoBase, filePath, ref string, trusted bool) (Result, error) {
 	rw := &LinkRewriter{RepoBase: repoBase, FilePath: filePath, Ref: ref}
 
-	rendererOpts := []renderer.Option{html.WithHardWraps(), html.WithXHTML()}
+	var htmlRendererOpts goldmark.Option
 	if trusted {
-		rendererOpts = append(rendererOpts, html.WithUnsafe())
+		htmlRendererOpts = goldmark.WithRendererOptions(html.WithHardWraps(), html.WithXHTML(), html.WithUnsafe())
+	} else {
+		htmlRendererOpts = goldmark.WithRendererOptions(html.WithHardWraps(), html.WithXHTML())
 	}
 
 	md := goldmark.New(
@@ -59,7 +60,7 @@ func Render(src []byte, repoBase, filePath, ref string, trusted bool) (Result, e
 			parser.WithAutoHeadingID(),
 			parser.WithASTTransformers(util.Prioritized(rw, 999)),
 		),
-		goldmark.WithRendererOptions(rendererOpts...),
+		htmlRendererOpts,
 	)
 
 	// Parse with a context so the frontmatter extension can store its data.
