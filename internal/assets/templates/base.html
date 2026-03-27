@@ -44,7 +44,7 @@
       <div class="main-inner">
         {{if .Breadcrumbs}}
         <nav class="breadcrumbs" aria-label="breadcrumb">
-          {{range .Breadcrumbs}}<a href="{{.URL}}">{{.Name}}</a><span class="bc-sep">/</span>{{end}}
+          {{range $i, $crumb := .Breadcrumbs}}{{if gt $i 0}}<span class="bc-sep">/</span>{{end}}<a href="{{$crumb.URL}}">{{$crumb.Name}}</a>{{end}}
         </nav>
         {{end}}
 
