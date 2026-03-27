@@ -404,3 +404,162 @@ func TestHandleLocalDoc_LabelNotRegistered(t *testing.T) {
 		t.Fatalf("status = %d, want 404", resp.StatusCode)
 	}
 }
+
+func TestSecurityHeaders(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	ts := makeTestServer(t, bareDir)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/example.com/testuser/testrepo/README.md")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	resp.Body.Close()
+
+	want := map[string]string{
+		"X-Content-Type-Options": "nosniff",
+		"X-Frame-Options":        "DENY",
+		"Referrer-Policy":        "strict-origin-when-cross-origin",
+		"Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'",
+	}
+	for header, wantVal := range want {
+		if got := resp.Header.Get(header); got != wantVal {
+			t.Errorf("header %s = %q, want %q", header, got, wantVal)
+		}
+	}
+}
+
+func makeTestBareRepoWithHTML(t *testing.T) string {
+	t.Helper()
+	workDir := t.TempDir()
+	bareDir := t.TempDir()
+
+	work, err := git.PlainInit(workDir, false)
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	wt, _ := work.Worktree()
+
+	writeTestFile(t, filepath.Join(workDir, "README.md"), "# Hello\n")
+	writeTestFile(t, filepath.Join(workDir, "page.html"), "<html><body><script>alert(1)</script></body></html>")
+
+	_ = wt.AddGlob(".")
+	_, err = wt.Commit("init", &git.CommitOptions{
+		Author: &object.Signature{Name: "t", Email: "t@t.com"},
+	})
+	if err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	git.PlainInit(bareDir, true)
+	work.CreateRemote(&gitconfig.RemoteConfig{Name: "origin", URLs: []string{bareDir}})
+	if err := work.Push(&git.PushOptions{RemoteName: "origin"}); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	return bareDir
+}
+
+func makeTestServerForHTML(t *testing.T, bareDir string) *httptest.Server {
+	t.Helper()
+	cacheDir := t.TempDir()
+	cfg := &config.Config{
+		Server: config.ServerConfig{Addr: ":0"},
+		Cache:  config.CacheConfig{Dir: cacheDir},
+		Repos: []config.RepoConfig{
+			{
+				Host:   "example.com",
+				Owner:  "testuser",
+				Repo:   "htmlrepo",
+				Remote: "file://" + bareDir,
+			},
+		},
+	}
+	store := gitstore.New(cfg)
+	if err := store.EnsureCloned(t.Context()); err != nil {
+		t.Fatalf("EnsureCloned: %v", err)
+	}
+	staticFS, _ := fs.Sub(assets.StaticFS, "static")
+	srv, err := web.New(cfg, store, assets.TemplateFS, staticFS)
+	if err != nil {
+		t.Fatalf("web.New: %v", err)
+	}
+	return httptest.NewServer(srv.Handler())
+}
+
+func TestHandleRaw_HTMLServedAsPlainText(t *testing.T) {
+	bareDir := makeTestBareRepoWithHTML(t)
+	ts := makeTestServerForHTML(t, bareDir)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/example.com/testuser/htmlrepo/-/raw/page.html")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	ct := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/plain") {
+		t.Errorf("Content-Type = %q, want text/plain for .html files", ct)
+	}
+}
+
+func TestHandleDoc_XSSStripped_Untrusted(t *testing.T) {
+	workDir := t.TempDir()
+	bareDir := t.TempDir()
+
+	work, err := git.PlainInit(workDir, false)
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	wt, _ := work.Worktree()
+	writeTestFile(t, filepath.Join(workDir, "xss.md"),
+		"# Danger\n\n<script>alert('xss')</script>\n")
+	_ = wt.AddGlob(".")
+	_, err = wt.Commit("init", &git.CommitOptions{
+		Author: &object.Signature{Name: "t", Email: "t@t.com"},
+	})
+	if err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	git.PlainInit(bareDir, true)
+	work.CreateRemote(&gitconfig.RemoteConfig{Name: "origin", URLs: []string{bareDir}})
+	if err := work.Push(&git.PushOptions{RemoteName: "origin"}); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+
+	cacheDir := t.TempDir()
+	cfg := &config.Config{
+		Server: config.ServerConfig{Addr: ":0"},
+		Cache:  config.CacheConfig{Dir: cacheDir},
+		Repos: []config.RepoConfig{{
+			Host: "example.com", Owner: "testuser", Repo: "xssrepo",
+			Remote: "file://" + bareDir,
+			// TrustedHTML omitted → defaults to false
+		}},
+	}
+	store := gitstore.New(cfg)
+	if err := store.EnsureCloned(t.Context()); err != nil {
+		t.Fatalf("EnsureCloned: %v", err)
+	}
+	staticFS, _ := fs.Sub(assets.StaticFS, "static")
+	srv, err := web.New(cfg, store, assets.TemplateFS, staticFS)
+	if err != nil {
+		t.Fatalf("web.New: %v", err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/example.com/testuser/xssrepo/xss.md")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if strings.Contains(string(body), "<script>") {
+		t.Errorf("XSS script tag survived in untrusted mode, body snippet: %q",
+			string(body)[:min(500, len(body))])
+	}
+}
