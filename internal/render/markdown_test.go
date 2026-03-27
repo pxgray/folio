@@ -50,3 +50,46 @@ func TestRender_TOCFalseExplicit(t *testing.T) {
 		t.Errorf("expected empty TOC with toc: false, got %q", result.TOC)
 	}
 }
+
+func TestRender_XSS_Untrusted(t *testing.T) {
+	// Without WithUnsafe(), goldmark escapes raw HTML.
+	// <script> must not appear as a live tag in untrusted mode.
+	src := []byte("# Title\n\n<script>alert(1)</script>\n")
+	result, err := Render(src, "/repo", "doc.md", "", false)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if strings.Contains(string(result.Content), "<script>") {
+		t.Errorf("script tag not stripped in untrusted mode, got: %q", result.Content)
+	}
+}
+
+func TestRender_XSS_Trusted(t *testing.T) {
+	// WithUnsafe() is on in trusted mode: raw HTML passes through.
+	src := []byte("# Title\n\n<script>alert(1)</script>\n")
+	result, err := Render(src, "/repo", "doc.md", "", true)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(string(result.Content), "<script>") {
+		t.Errorf("script tag unexpectedly absent in trusted mode, got: %q", result.Content)
+	}
+}
+
+func TestRender_MarkdownSyntax_Untrusted(t *testing.T) {
+	// Markdown syntax (not raw HTML) must render correctly in untrusted mode.
+	src := []byte("# Title\n\n**bold** and *em* and [link](https://example.com)\n")
+	result, err := Render(src, "/repo", "doc.md", "", false)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(string(result.Content), "<strong>bold</strong>") {
+		t.Errorf("bold not rendered: %q", result.Content)
+	}
+	if !strings.Contains(string(result.Content), "<em>em</em>") {
+		t.Errorf("em not rendered: %q", result.Content)
+	}
+	if !strings.Contains(string(result.Content), `href="https://example.com"`) {
+		t.Errorf("link not rendered: %q", result.Content)
+	}
+}
