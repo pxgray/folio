@@ -36,8 +36,8 @@ type dirData struct {
 	RepoName    string
 	Ref         string
 	Nav         []nav.Item
-	CurrentPath string // exported for template active-nav comparison
-	currentPath string // used by EntryURL
+	CurrentPath string // repo-relative path; exported for template active-nav comparison (templates require exported fields)
+	currentPath string // same value as CurrentPath; kept unexported so EntryURL can use it without exposing it to templates
 }
 
 // EntryURL builds the URL for a directory entry (called from dir.html).

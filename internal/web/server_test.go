@@ -300,8 +300,9 @@ func TestHandleDoc_ActiveNavItem(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	bodyStr := string(body)
-	if !strings.Contains(bodyStr, `class="active"`) {
-		t.Errorf("rendered page missing active nav class; body snippet: %q",
+	wantActive := `href="/example.com/testuser/navrepo/docs/guide.md" class="active"`
+	if !strings.Contains(bodyStr, wantActive) {
+		t.Errorf("rendered page missing active nav class on expected link; body snippet: %q",
 			bodyStr[:min(500, len(bodyStr))])
 	}
 }
