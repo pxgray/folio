@@ -558,8 +558,9 @@ func TestHandleDoc_XSSStripped_Untrusted(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	if strings.Contains(string(body), "<script>") {
-		t.Errorf("XSS script tag survived in untrusted mode, body snippet: %q",
+	// Check the specific XSS payload — not just any <script> (the page template has one for theming).
+	if strings.Contains(string(body), "<script>alert") {
+		t.Errorf("XSS script tag not escaped in untrusted mode, body snippet: %q",
 			string(body)[:min(500, len(body))])
 	}
 }
