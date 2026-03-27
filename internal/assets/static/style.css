@@ -125,6 +125,7 @@ body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
 
 /* ── Main content ── */
 main { flex: 1; min-width: 0; padding: 2rem 1.5rem; max-width: 72ch; }
+.page-body:not(:has(.sidebar)) main { margin: 0 auto; }
 
 /* ── TOC rail ──
    .toc-rail stretches to full page height for the border.
@@ -176,6 +177,7 @@ footer { text-align: center; font-size: 0.8rem; color: var(--pico-muted-color); 
 .dirlist-entry.is-dir a { font-weight: 500; color: var(--pico-color); }
 .entry-size { font-size: 0.8rem; color: var(--pico-muted-color); white-space: nowrap; }
 .index-doc { margin-top: 2rem; }
+.dirlist-section { margin-bottom: 2rem; }
 
 /* ── Repo list (index page) ── */
 .repo-list-items {
