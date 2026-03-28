@@ -358,3 +358,21 @@ func TestGridTable_ColspanRowspanThroughSanitizer(t *testing.T) {
 		t.Errorf("expected rowspan=\"2\" to survive sanitizer, got: %q", html)
 	}
 }
+
+// TestGridTable_TrustedRawHTMLInCell verifies that in trusted mode, raw HTML
+// inside a cell passes through the helper renderer's WithUnsafe option.
+func TestGridTable_TrustedRawHTMLInCell(t *testing.T) {
+	src := []byte(
+		"+----------------------------+\n" +
+			"| <strong>bold</strong>      |\n" +
+			"+----------------------------+\n",
+	)
+	result, err := Render(src, "/repo", "doc.md", "", true)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	html := string(result.Content)
+	if !strings.Contains(html, "<strong>bold</strong>") {
+		t.Errorf("expected raw HTML to pass through in trusted mode, got: %q", html)
+	}
+}

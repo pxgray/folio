@@ -772,6 +772,10 @@ func (t *GridTableTransformer) Transform(doc *ast.Document, reader text.Reader, 
 		}
 
 		var buf bytes.Buffer
+		// helper.Convert uses cell.rawContent as its own source, so text segment
+		// offsets are always valid. bytes.Buffer.Write never errors, so the only
+		// possible error is from a renderer — unreachable in practice. On error we
+		// fall back to an empty cell, matching GridTableParser.Close's silent fallback.
 		if err := helper.Convert(cell.rawContent, &buf); err == nil {
 			cell.renderedHTML = buf.Bytes()
 		}
