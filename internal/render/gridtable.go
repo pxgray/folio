@@ -363,10 +363,14 @@ func parseGrid(lines [][]byte) ([]parsedCell, error) {
 					}
 				}
 
-				// Start new cells for the columns that just ended, at the current logical row.
-				// But first we need a sub-separator detection for colspan among
-				// the ending columns. For simplicity, each ending column gets its
-				// own cell (colspan=1) starting at the current logicalRow.
+				// Advance to the next logical row before opening new cells for the
+				// ending columns. Continuing cells already have their startRow set
+				// and will accumulate further content; the new cells that replace
+				// the ended ones must begin at the new (incremented) logical row
+				// so that rowspan calculations come out correct.
+				logicalRow++
+
+				// Start new cells for the columns that just ended, at the new logical row.
 				// Detect colspan among ending columns in this partial separator.
 				endingGroups := detectEndingColSpanGroups(line, colBounds, ends, numCols)
 				for _, group := range endingGroups {
