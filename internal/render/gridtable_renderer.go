@@ -10,6 +10,9 @@ import (
 )
 
 // GridTableRenderer is a goldmark NodeRenderer for RST-style grid table nodes.
+// The html.Config embed is the standard goldmark pattern for propagating global
+// HTML renderer options (e.g. XHTML mode, unsafe HTML) without panicking when
+// the renderer pipeline calls SetConfig on all registered renderers.
 type GridTableRenderer struct {
 	html.Config
 }
@@ -67,11 +70,12 @@ func (r *GridTableRenderer) renderGridTableCell(w util.BufWriter, source []byte,
 		return ast.WalkContinue, nil
 	}
 
+	tag := "td"
+	if cell.IsHead {
+		tag = "th"
+	}
+
 	if entering {
-		tag := "td"
-		if cell.IsHead {
-			tag = "th"
-		}
 		_, _ = w.WriteString("<" + tag)
 		if cell.ColSpan > 1 {
 			_, _ = w.WriteString(fmt.Sprintf(" colspan=\"%d\"", cell.ColSpan))
@@ -81,10 +85,6 @@ func (r *GridTableRenderer) renderGridTableCell(w util.BufWriter, source []byte,
 		}
 		_, _ = w.WriteString(">\n")
 	} else {
-		tag := "td"
-		if cell.IsHead {
-			tag = "th"
-		}
 		_, _ = w.WriteString("</" + tag + ">\n")
 	}
 	return ast.WalkContinue, nil

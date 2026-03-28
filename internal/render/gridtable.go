@@ -218,6 +218,9 @@ func parseGrid(lines [][]byte) ([]parsedCell, error) {
 		if right > len(line) {
 			right = len(line)
 		}
+		if left > right {
+			return nil
+		}
 		return line[left:right]
 	}
 
@@ -548,11 +551,13 @@ func stripConsistentPadding(lines [][]byte) []byte {
 // BlockParser
 // ---------------------------------------------------------------------------
 
+// gridTableLinesKey is the parser.Context key used to store per-parse line
+// accumulation state, avoiding a data race if the goldmark instance is reused.
+var gridTableLinesKey = parser.NewContextKey()
+
 // GridTableParser is a goldmark BlockParser that recognises RST-style grid
 // tables and collects their raw lines.
-type GridTableParser struct {
-	lines [][]byte
-}
+type GridTableParser struct{}
 
 // Trigger returns the byte that triggers this parser ('+').
 func (p *GridTableParser) Trigger() []byte { return []byte{'+'} }
@@ -573,8 +578,7 @@ func (p *GridTableParser) Open(parent ast.Node, reader text.Reader, pc parser.Co
 		return nil, parser.NoChildren
 	}
 
-	p.lines = nil
-	p.lines = append(p.lines, copyBytes(line))
+	pc.Set(gridTableLinesKey, [][]byte{copyBytes(line)})
 	return NewGridTable(), parser.Continue | parser.NoChildren
 }
 
@@ -590,7 +594,8 @@ func (p *GridTableParser) Continue(node ast.Node, reader text.Reader, pc parser.
 
 	// Accept content lines (start with |) and separator lines (start with +).
 	if len(trimmed) > 0 && (trimmed[0] == '|' || trimmed[0] == '+') {
-		p.lines = append(p.lines, copyBytes(trimmed))
+		lines, _ := pc.Get(gridTableLinesKey).([][]byte)
+		pc.Set(gridTableLinesKey, append(lines, copyBytes(trimmed)))
 		return parser.Continue | parser.NoChildren
 	}
 
@@ -605,21 +610,23 @@ func (p *GridTableParser) Close(node ast.Node, reader text.Reader, pc parser.Con
 		return
 	}
 
-	cells, err := parseGrid(p.lines)
+	lines, _ := pc.Get(gridTableLinesKey).([][]byte)
+	pc.Set(gridTableLinesKey, nil)
+
+	cells, err := parseGrid(lines)
 	if err != nil {
 		// Graceful fallback: leave the table empty.
 		return
 	}
 
 	buildGridTableAST(table, cells)
-	p.lines = nil
 }
 
 // CanInterruptParagraph returns false.
 func (p *GridTableParser) CanInterruptParagraph() bool { return false }
 
-// CanAcceptIndentedCode returns false.
-func (p *GridTableParser) CanAcceptIndentedCode() bool { return false }
+// CanAcceptIndentedLine returns false.
+func (p *GridTableParser) CanAcceptIndentedLine() bool { return false }
 
 // buildGridTableAST constructs the child AST nodes for a GridTable from
 // parsed cells.
@@ -769,7 +776,7 @@ func (e *GridTableExtension) Extend(m goldmark.Markdown) {
 	helper := goldmark.New(goldmark.WithExtensions(extension.GFM))
 
 	m.Parser().AddOptions(
-		parser.WithBlockParsers(util.Prioritized(&GridTableParser{}, 500)),
+		parser.WithBlockParsers(util.Prioritized(new(GridTableParser), 500)),
 		parser.WithASTTransformers(util.Prioritized(&GridTableTransformer{helper: helper}, 50)),
 	)
 	m.Renderer().AddOptions(
