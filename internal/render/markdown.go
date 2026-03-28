@@ -22,6 +22,8 @@ var untrustedPolicy = func() *bluemonday.Policy {
 	p := bluemonday.UGCPolicy()
 	// Preserve goldmark-generated heading IDs so TOC anchor links work.
 	p.AllowAttrs("id").OnElements("h1", "h2", "h3", "h4", "h5", "h6")
+	// Preserve colspan/rowspan on table cells for RST grid table rendering.
+	p.AllowAttrs("colspan", "rowspan").OnElements("td", "th")
 	return p
 }()
 
@@ -54,6 +56,7 @@ func Render(src []byte, repoBase, filePath, ref string, trusted bool) (Result, e
 			extension.Strikethrough,
 			extension.TaskList,
 			&frontmatter.Extender{},
+			&GridTableExtension{},
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
