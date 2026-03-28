@@ -28,6 +28,12 @@ func TestGridTable_BasicNoHeader(t *testing.T) {
 	if strings.Contains(html, "<thead>") {
 		t.Errorf("expected no <thead> in body-only table, got: %q", html)
 	}
+	// Verify actual cell text is rendered (not garbled grid border bytes).
+	for _, want := range []string{"A", "B", "C", "D", "E", "F"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("expected cell text %q in output, got: %q", want, html)
+		}
+	}
 }
 
 // TestGridTable_HeaderTable tests a table with a === header/body separator.
@@ -55,6 +61,19 @@ func TestGridTable_HeaderTable(t *testing.T) {
 	}
 	if !strings.Contains(html, "<td>") {
 		t.Errorf("expected <td>, got: %q", html)
+	}
+	// Verify actual cell content renders correctly.
+	if !strings.Contains(html, "Head1") {
+		t.Errorf("expected header text 'Head1', got: %q", html)
+	}
+	if !strings.Contains(html, "Head2") {
+		t.Errorf("expected header text 'Head2', got: %q", html)
+	}
+	if !strings.Contains(html, "Row1") {
+		t.Errorf("expected body text 'Row1', got: %q", html)
+	}
+	if !strings.Contains(html, "Row2") {
+		t.Errorf("expected body text 'Row2', got: %q", html)
 	}
 }
 
@@ -112,6 +131,13 @@ func TestGridTable_MultiLineCell(t *testing.T) {
 	// two lines are rendered as a single paragraph containing a <br/>.
 	if !strings.Contains(firstCell, "<br/>") {
 		t.Errorf("expected <br/> in multi-line cell (HardWraps), got: %q", firstCell)
+	}
+	// Verify both lines of text appear in the rendered output.
+	if !strings.Contains(firstCell, "line one") {
+		t.Errorf("expected 'line one' in multi-line cell, got: %q", firstCell)
+	}
+	if !strings.Contains(firstCell, "line two") {
+		t.Errorf("expected 'line two' in multi-line cell, got: %q", firstCell)
 	}
 }
 
@@ -179,6 +205,13 @@ func TestGridTable_BulletListInCell(t *testing.T) {
 	if !strings.Contains(cell, "<li>") {
 		t.Errorf("expected <li> inside <td>, cell: %q", cell)
 	}
+	// Verify actual list item text appears.
+	if !strings.Contains(cell, "item1") {
+		t.Errorf("expected 'item1' inside <td>, cell: %q", cell)
+	}
+	if !strings.Contains(cell, "item2") {
+		t.Errorf("expected 'item2' inside <td>, cell: %q", cell)
+	}
 }
 
 // TestGridTable_CodeFenceInCell tests that a fenced code block inside a cell
@@ -211,6 +244,10 @@ func TestGridTable_CodeFenceInCell(t *testing.T) {
 	cell := html[tdIdx : tdIdx+closeTdIdx]
 	if !strings.Contains(cell, "<code>") && !strings.Contains(cell, "<code ") {
 		t.Errorf("expected <code> inside <td>, cell: %q", cell)
+	}
+	// Verify the actual code content appears.
+	if !strings.Contains(cell, "fmt.Println") {
+		t.Errorf("expected code content 'fmt.Println' inside <td>, cell: %q", cell)
 	}
 }
 

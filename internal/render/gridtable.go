@@ -12,6 +12,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
 )
@@ -92,10 +93,11 @@ func NewGridTableRow() *GridTableRow {
 // GridTableCell represents <td> or <th>.
 type GridTableCell struct {
 	ast.BaseBlock
-	ColSpan    int
-	RowSpan    int
-	IsHead     bool
-	rawContent []byte
+	ColSpan      int
+	RowSpan      int
+	IsHead       bool
+	rawContent   []byte // set by parser, consumed by transformer
+	renderedHTML []byte // set by transformer, emitted by renderer
 }
 
 // Kind returns KindGridTableCell.
@@ -555,6 +557,14 @@ func stripConsistentPadding(lines [][]byte) []byte {
 // accumulation state, avoiding a data race if the goldmark instance is reused.
 var gridTableLinesKey = parser.NewContextKey()
 
+// gridTableLinkRewriterKey stores the *LinkRewriter for the current parse,
+// so the transformer can apply link rewriting inside cells.
+var gridTableLinkRewriterKey = parser.NewContextKey()
+
+// gridTableTrustedKey stores the trusted bool for the current parse,
+// so the transformer can match the outer renderer's unsafe-HTML setting.
+var gridTableTrustedKey = parser.NewContextKey()
+
 // GridTableParser is a goldmark BlockParser that recognises RST-style grid
 // tables and collects their raw lines.
 type GridTableParser struct{}
@@ -724,15 +734,34 @@ func copyBytes(b []byte) []byte {
 // AST Transformer
 // ---------------------------------------------------------------------------
 
-// GridTableTransformer is a goldmark ASTTransformer that recursively parses
-// cell content in GridTableCell nodes using a helper goldmark instance.
-type GridTableTransformer struct {
-	helper goldmark.Markdown
-}
+// GridTableTransformer is a goldmark ASTTransformer that renders cell content
+// in GridTableCell nodes to HTML using a helper goldmark instance, storing the
+// result in cell.renderedHTML so the renderer can emit it directly.
+type GridTableTransformer struct{}
 
-// Transform walks the AST looking for GridTableCell nodes and parses their
-// rawContent into child AST nodes.
+// Transform walks the AST looking for GridTableCell nodes and renders their
+// rawContent to HTML, storing the result in renderedHTML.
 func (t *GridTableTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
+	rw, _ := pc.Get(gridTableLinkRewriterKey).(*LinkRewriter)
+	trusted, _ := pc.Get(gridTableTrustedKey).(bool)
+
+	// Build a helper goldmark per document (not per cell) for cell content rendering.
+	// GFM extensions enabled; GridTableExtension excluded to prevent infinite recursion.
+	helperRendererOpts := []renderer.Option{html.WithHardWraps(), html.WithXHTML()}
+	if trusted {
+		helperRendererOpts = append(helperRendererOpts, html.WithUnsafe())
+	}
+	helperParserOpts := []parser.Option{}
+	if rw != nil {
+		helperParserOpts = append(helperParserOpts,
+			parser.WithASTTransformers(util.Prioritized(rw, 999)))
+	}
+	helper := goldmark.New(
+		goldmark.WithExtensions(extension.GFM),
+		goldmark.WithParserOptions(helperParserOpts...),
+		goldmark.WithRendererOptions(helperRendererOpts...),
+	)
+
 	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
@@ -742,15 +771,9 @@ func (t *GridTableTransformer) Transform(doc *ast.Document, reader text.Reader, 
 			return ast.WalkContinue, nil
 		}
 
-		// Parse cell content with the helper goldmark instance.
-		subDoc := t.helper.Parser().Parse(text.NewReader(cell.rawContent))
-
-		// Re-parent children from the parsed sub-document into the cell.
-		for child := subDoc.FirstChild(); child != nil; {
-			next := child.NextSibling()
-			subDoc.RemoveChild(subDoc, child)
-			cell.AppendChild(cell, child)
-			child = next
+		var buf bytes.Buffer
+		if err := helper.Convert(cell.rawContent, &buf); err == nil {
+			cell.renderedHTML = buf.Bytes()
 		}
 		cell.rawContent = nil
 		return ast.WalkContinue, nil
@@ -771,13 +794,9 @@ type GridTableExtension struct{}
 // Extend registers the grid table parser, transformer, and renderer with
 // the given goldmark instance.
 func (e *GridTableExtension) Extend(m goldmark.Markdown) {
-	// The helper goldmark instance used by the transformer includes GFM
-	// extensions but NOT GridTableExtension, to prevent infinite recursion.
-	helper := goldmark.New(goldmark.WithExtensions(extension.GFM))
-
 	m.Parser().AddOptions(
-		parser.WithBlockParsers(util.Prioritized(new(GridTableParser), 500)),
-		parser.WithASTTransformers(util.Prioritized(&GridTableTransformer{helper: helper}, 50)),
+		parser.WithBlockParsers(util.Prioritized(&GridTableParser{}, 500)),
+		parser.WithASTTransformers(util.Prioritized(&GridTableTransformer{}, 50)),
 	)
 	m.Renderer().AddOptions(
 		renderer.WithNodeRenderers(util.Prioritized(&GridTableRenderer{}, 500)),

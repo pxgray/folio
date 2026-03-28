@@ -78,14 +78,15 @@ func (r *GridTableRenderer) renderGridTableCell(w util.BufWriter, source []byte,
 	if entering {
 		_, _ = w.WriteString("<" + tag)
 		if cell.ColSpan > 1 {
-			_, _ = w.WriteString(fmt.Sprintf(" colspan=\"%d\"", cell.ColSpan))
+			_, _ = fmt.Fprintf(w, ` colspan="%d"`, cell.ColSpan)
 		}
 		if cell.RowSpan > 1 {
-			_, _ = w.WriteString(fmt.Sprintf(" rowspan=\"%d\"", cell.RowSpan))
+			_, _ = fmt.Fprintf(w, ` rowspan="%d"`, cell.RowSpan)
 		}
 		_, _ = w.WriteString(">\n")
-	} else {
-		_, _ = w.WriteString("</" + tag + ">\n")
+		_, _ = w.Write(cell.renderedHTML)
+		return ast.WalkSkipChildren, nil
 	}
+	_, _ = w.WriteString("</" + tag + ">\n")
 	return ast.WalkContinue, nil
 }

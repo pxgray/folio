@@ -67,6 +67,8 @@ func Render(src []byte, repoBase, filePath, ref string, trusted bool) (Result, e
 
 	// Parse with a context so the frontmatter extension can store its data.
 	pctx := parser.NewContext()
+	pctx.Set(gridTableLinkRewriterKey, rw)
+	pctx.Set(gridTableTrustedKey, trusted)
 	doc := md.Parser().Parse(text.NewReader(src), parser.WithContext(pctx))
 
 	// Decode frontmatter to check for toc: true.
