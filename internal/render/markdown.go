@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"html/template"
 
+	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
@@ -12,6 +13,7 @@ import (
 	"github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
+	highlighting "github.com/yuin/goldmark-highlighting/v2"
 	"go.abhg.dev/goldmark/frontmatter"
 	"go.abhg.dev/goldmark/toc"
 )
@@ -24,6 +26,8 @@ var untrustedPolicy = func() *bluemonday.Policy {
 	p.AllowAttrs("id").OnElements("h1", "h2", "h3", "h4", "h5", "h6")
 	// Preserve colspan/rowspan on table cells for RST grid table rendering.
 	p.AllowAttrs("colspan", "rowspan").OnElements("td", "th")
+	// Preserve chroma syntax-highlighting classes on code elements.
+	p.AllowAttrs("class").OnElements("pre", "code", "span")
 	return p
 }()
 
@@ -57,6 +61,10 @@ func Render(src []byte, repoBase, filePath, ref string, trusted bool) (Result, e
 			extension.TaskList,
 			&frontmatter.Extender{},
 			&GridTableExtension{},
+			highlighting.NewHighlighting(
+				highlighting.WithStyle("github"),
+				highlighting.WithFormatOptions(chromahtml.WithClasses(true)),
+			),
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),

@@ -60,3 +60,8 @@ tasks:
     desc: Tidy go.mod and go.sum
     cmds:
       - go mod tidy
+
+  gencss:
+    desc: Regenerate internal/assets/static/highlight.css from chroma themes
+    cmds:
+      - go run ./cmd/gencss

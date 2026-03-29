@@ -1,11 +1,12 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}} — Folio</title>
   <link rel="stylesheet" href="/-/static/pico.min.css">
   <link rel="stylesheet" href="/-/static/style.css">
+  <link rel="stylesheet" href="/-/static/highlight.css">
 </head>
 <body>
   <header class="topbar">
@@ -15,7 +16,7 @@
     <a class="topbar-repo" href="{{.RepoBase}}">{{.RepoName}}</a>
     {{end}}
     <span class="topbar-spacer"></span>
-    <button class="theme-toggle" onclick="toggleTheme(); this.blur()" id="theme-btn">☾</button>
+    <button class="theme-toggle" id="theme-btn">☾</button>
   </header>
 
   <div class="page-body">

@@ -76,6 +76,52 @@ func TestRender_XSS_Trusted(t *testing.T) {
 	}
 }
 
+func TestRender_SyntaxHighlighting_WithLanguage(t *testing.T) {
+	src := []byte("```go\nfunc main() {}\n```\n")
+	result, err := Render(src, "/repo", "doc.md", "", false)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	html := string(result.Content)
+	// Chroma wraps the block in <pre class="chroma">.
+	if !strings.Contains(html, `class="chroma"`) {
+		t.Errorf("expected chroma class on pre, got: %q", html)
+	}
+	// Chroma emits token spans for a known language.
+	if !strings.Contains(html, `<span class="`) {
+		t.Errorf("expected token spans in highlighted output, got: %q", html)
+	}
+}
+
+func TestRender_SyntaxHighlighting_NoLanguage(t *testing.T) {
+	src := []byte("```\nplain text\n```\n")
+	result, err := Render(src, "/repo", "doc.md", "", false)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	html := string(result.Content)
+	// Should still produce a pre/code block even without a language.
+	if !strings.Contains(html, "<pre") {
+		t.Errorf("expected pre element, got: %q", html)
+	}
+	if !strings.Contains(html, "plain text") {
+		t.Errorf("expected code content, got: %q", html)
+	}
+}
+
+func TestRender_SyntaxHighlighting_ClassesPreservedUntrusted(t *testing.T) {
+	src := []byte("```go\nvar x = 1\n```\n")
+	result, err := Render(src, "/repo", "doc.md", "", false)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	html := string(result.Content)
+	// Bluemonday must not strip chroma span classes.
+	if !strings.Contains(html, `class="`) {
+		t.Errorf("bluemonday stripped all classes from highlighted output: %q", html)
+	}
+}
+
 func TestRender_MarkdownSyntax_Untrusted(t *testing.T) {
 	// Markdown syntax (not raw HTML) must render correctly in untrusted mode.
 	src := []byte("# Title\n\n**bold** and *em* and [link](https://example.com)\n")
