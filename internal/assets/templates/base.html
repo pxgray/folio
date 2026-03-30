@@ -10,6 +10,7 @@
 </head>
 <body>
   <header class="topbar">
+    <button class="nav-toggle" id="nav-btn" aria-label="Open navigation">☰</button>
     <a class="topbar-brand" href="/">Folio</a>
     {{if .RepoBase}}
     <span class="topbar-sep">›</span>
@@ -20,8 +21,11 @@
   </header>
 
   <div class="page-body">
+    <div class="nav-overlay" id="nav-overlay"></div>
+
     {{if .Nav}}
-    <nav class="sidebar" aria-label="navigation">
+    <nav class="sidebar" id="sidebar" aria-label="navigation">
+      <button class="nav-close" id="nav-close" aria-label="Close navigation">✕</button>
       <ul class="nav-tree">
         {{range .Nav}}
         {{if .Children}}
@@ -42,26 +46,26 @@
     {{end}}
 
     <div class="content-row">
-      <div class="main-inner">
-        {{if .Breadcrumbs}}
-        <nav class="breadcrumbs" aria-label="breadcrumb">
-          {{range $i, $crumb := .Breadcrumbs}}{{if gt $i 0}}<span class="bc-sep">/</span>{{end}}<a href="{{$crumb.URL}}">{{$crumb.Name}}</a>{{end}}
-        </nav>
-        {{end}}
-
-        <main>
-          {{block "content" .}}{{end}}
-        </main>
-      </div>
+      {{if .Breadcrumbs}}
+      <nav class="breadcrumbs" aria-label="breadcrumb">
+        {{range $i, $crumb := .Breadcrumbs}}{{if gt $i 0}}<span class="bc-sep">/</span>{{end}}<a href="{{$crumb.URL}}">{{$crumb.Name}}</a>{{end}}
+      </nav>
+      {{end}}
 
       {{if .TOC}}
       <aside class="toc-rail" aria-label="table of contents">
-        <div class="toc-inner">
-          <p class="toc-title">On this page</p>
-          {{.TOC}}
-        </div>
+        <details class="toc-details">
+          <summary class="toc-summary">On this page</summary>
+          <div class="toc-body">
+            {{.TOC}}
+          </div>
+        </details>
       </aside>
       {{end}}
+
+      <main>
+        {{block "content" .}}{{end}}
+      </main>
     </div>
   </div>
 
