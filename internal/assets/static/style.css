@@ -49,7 +49,7 @@ body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
 }
 
 /* ── Page body ── */
-.page-body { display: flex; flex: 1; align-items: flex-start; }
+.page-body { display: flex; flex: 1; align-items: flex-start; max-width: 1200px; width: 100%; margin: 0 auto; }
 
 /* ── Sidebar ──
    PicoCSS sets nav→flex, nav ul→flex-row with -9px margins, nav li→inline-block.
@@ -105,8 +105,23 @@ body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
 .nav-children a { padding-left: calc(1.5rem + 4px); }
 
 /* ── Content layout ── */
-.content-row { flex: 1; min-width: 0; display: flex; align-items: flex-start; }
-.main-inner  { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.content-row {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "breadcrumbs toc"
+    "main        toc";
+  align-items: start;
+}
+.content-row:not(:has(.toc-rail)) {
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    "breadcrumbs"
+    "main";
+}
 
 /* ── Breadcrumbs ── */
 .breadcrumbs {
@@ -116,7 +131,7 @@ body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
   font-size: 0.85rem;
   border-bottom: 1px solid var(--pico-muted-border-color);
   background: var(--pico-background-color);
-  flex-shrink: 0;
+  grid-area: breadcrumbs;
   gap: 0;
 }
 .breadcrumbs a { padding: 0; margin: 0; color: var(--pico-primary); text-decoration: none; line-height: 1; }
@@ -124,26 +139,24 @@ body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
 .bc-sep { color: var(--pico-muted-color); margin: 0 0.3rem; line-height: 1; }
 
 /* ── Main content ── */
-main { flex: 1; min-width: 0; padding: 2rem 1.5rem; max-width: 72ch; }
+main { min-width: 0; padding: 2rem 2.5rem; grid-area: main; }
 main h1, main h2, main h3, main h4, main h5, main h6 { scroll-margin-top: 60px; }
-.page-body:not(:has(.sidebar)) main { margin: 0 auto; }
 
-/* ── TOC rail ──
-   .toc-rail stretches to full page height for the border.
-   .toc-inner is sticky so the TOC list scrolls with the user. */
+/* ── TOC rail ── */
 .toc-rail {
-  width: 200px;
-  flex-shrink: 0;
+  grid-area: toc;
   border-left: 1px solid var(--pico-muted-border-color);
   align-self: stretch;
 }
-.toc-inner {
+/* Desktop: always show TOC content, hide the <details> toggle */
+.toc-summary { display: none; }
+.toc-details > .toc-body { display: block !important; }
+.toc-body {
   position: sticky;
   top: 52px;
   padding: 2rem 1rem 2rem 1.5rem;
   font-size: 0.85rem;
 }
-.toc-title { margin: 0 0 0.5rem; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--pico-muted-color); }
 /* Same PicoCSS nav resets as sidebar */
 .toc-nav { display: block; }
 .toc-nav ul { display: block; list-style: none; padding: 0; margin: 0 !important; }
@@ -181,9 +194,101 @@ footer { text-align: center; font-size: 0.8rem; color: var(--pico-muted-color); 
 .dirlist-section { margin-bottom: 2rem; }
 
 /* ── Responsive layout ── */
-@media (max-width: 768px) {
-  .sidebar { display: none; }
-  .toc-rail { display: none; }
+/* Nav toggle and overlay: hidden on desktop, enabled in the mobile media query */
+.nav-toggle {
+  display: none;
+  background: none;
+  border: none;
+  padding: 0.25rem 0.4rem;
+  cursor: pointer;
+  color: var(--pico-color);
+  font-size: 1.1rem;
+  margin: 0;
+  line-height: 1;
+}
+.nav-toggle:hover,
+.nav-toggle:focus,
+.nav-toggle:focus-visible,
+.nav-toggle:active {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.nav-close {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--pico-muted-color);
+  font-size: 1.1rem;
+  padding: 0.5rem 1rem;
+  width: 100%;
+  text-align: right;
+  margin: 0;
+}
+.nav-close:hover { color: var(--pico-color); }
+.nav-overlay { display: none; }
+
+@media (max-width: 1024px) {
+  /* Show hamburger and close button */
+  .nav-toggle { display: block; }
+  .nav-close  { display: block; }
+
+  /* Sidebar becomes a fixed drawer */
+  .sidebar {
+    position: fixed;
+    top: 52px;
+    left: 0;
+    height: calc(100vh - 52px);
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 200;
+    overflow-y: auto;
+    background: var(--pico-background-color);
+    border-right: 1px solid var(--pico-muted-border-color);
+    align-self: unset;
+  }
+  .sidebar.is-open { transform: translateX(0); }
+
+  /* Semi-transparent overlay behind the open drawer */
+  .nav-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    top: 52px;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 199;
+  }
+  .nav-overlay.is-active { display: block; }
+
+  /* Single-column grid */
+  .content-row {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "breadcrumbs"
+      "toc"
+      "main";
+  }
+
+  /* TOC stacks inline; native <details> controls open/close */
+  .toc-rail {
+    border-left: none;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+    align-self: auto;
+  }
+  .toc-summary {
+    display: block;
+    cursor: pointer;
+    padding: 0.5rem 1.5rem;
+    font-size: 0.85rem;
+    color: var(--pico-muted-color);
+    font-weight: 600;
+  }
+  .toc-body {
+    position: static;
+    padding: 0.5rem 1.5rem 1rem;
+  }
+
+  /* Reduce main padding on narrow screens */
   main { padding: 1.5rem 1rem; }
   .breadcrumbs { padding: 0.5rem 1rem; }
 }
