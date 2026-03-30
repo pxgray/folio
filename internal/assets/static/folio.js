@@ -40,6 +40,7 @@
     sidebar.classList.remove('is-open');
     if(navOverlay) navOverlay.classList.remove('is-active');
     document.body.style.overflow='';
+    navBtn.focus();
   }
 
   navBtn.addEventListener('click',openNav);
