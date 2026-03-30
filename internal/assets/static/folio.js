@@ -53,5 +53,8 @@
 
 (function(){
   var toc=document.querySelector('.toc-details');
-  if(toc) toc.open=window.innerWidth>1024;
+  if(!toc) return;
+  function syncToc(){ if(window.innerWidth>1024) toc.open=true; }
+  syncToc();
+  window.addEventListener('resize',syncToc);
 })();
