@@ -148,9 +148,8 @@ main h1, main h2, main h3, main h4, main h5, main h6 { scroll-margin-top: 60px; 
   border-left: 1px solid var(--pico-muted-border-color);
   align-self: stretch;
 }
-/* Desktop: always show TOC content, hide the <details> toggle */
+/* Desktop: hide the <details> toggle; JS opens the details on load */
 .toc-summary { display: none; }
-.toc-details > .toc-body { display: block !important; }
 .toc-body {
   position: sticky;
   top: 52px;

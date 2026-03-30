@@ -43,10 +43,15 @@
     navBtn.focus();
   }
 
-  navBtn.addEventListener('click',openNav);
+  navBtn.addEventListener('click',function(){ sidebar.classList.contains('is-open')?closeNav():openNav(); });
   if(navOverlay) navOverlay.addEventListener('click',closeNav);
   if(navClose) navClose.addEventListener('click',closeNav);
   sidebar.querySelectorAll('a').forEach(function(a){
     a.addEventListener('click',closeNav);
   });
+})();
+
+(function(){
+  var toc=document.querySelector('.toc-details');
+  if(toc) toc.open=window.innerWidth>1024;
 })();
