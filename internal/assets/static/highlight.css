@@ -84,6 +84,8 @@
 /* GenericTraceback */ .chroma .gt { color: #aa0000 }
 /* GenericUnderline */ .chroma .gl { text-decoration: underline }
 /* TextWhitespace */ .chroma .w { color: #bbbbbb }
+/* Match PicoCSS code background on highlighted blocks */
+.chroma { background-color: var(--pico-code-background-color); }
 
 /* dark: dracula — scoped to [data-theme="dark"] */
 [data-theme="dark"] /* Background */ .bg { color: #f8f8f2; background-color: #282a36; }
