@@ -23,3 +23,29 @@
     btn.textContent=isDark?'☾':'☀';
   });
 })();
+
+(function(){
+  var navBtn=document.getElementById('nav-btn');
+  var navOverlay=document.getElementById('nav-overlay');
+  var sidebar=document.getElementById('sidebar');
+  var navClose=document.getElementById('nav-close');
+  if(!navBtn||!sidebar) return;
+
+  function openNav(){
+    sidebar.classList.add('is-open');
+    if(navOverlay) navOverlay.classList.add('is-active');
+    document.body.style.overflow='hidden';
+  }
+  function closeNav(){
+    sidebar.classList.remove('is-open');
+    if(navOverlay) navOverlay.classList.remove('is-active');
+    document.body.style.overflow='';
+  }
+
+  navBtn.addEventListener('click',openNav);
+  if(navOverlay) navOverlay.addEventListener('click',closeNav);
+  if(navClose) navClose.addEventListener('click',closeNav);
+  sidebar.querySelectorAll('a').forEach(function(a){
+    a.addEventListener('click',closeNav);
+  });
+})();
