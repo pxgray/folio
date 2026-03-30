@@ -201,7 +201,7 @@ footer { text-align: center; font-size: 0.8rem; color: var(--pico-muted-color); 
   border: none !important;
   padding: 0.25rem 0.4rem;
   cursor: pointer;
-  color: var(--pico-color) !important;
+  color: inherit !important;
   font-size: 1.1rem;
   margin: 0;
   line-height: 1;
@@ -213,7 +213,7 @@ footer { text-align: center; font-size: 0.8rem; color: var(--pico-muted-color); 
   outline: none !important;
   box-shadow: none !important;
   background: none !important;
-  color: var(--pico-color) !important;
+  color: inherit !important;
 }
 .nav-close {
   display: none;
