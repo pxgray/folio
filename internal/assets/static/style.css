@@ -197,11 +197,11 @@ footer { text-align: center; font-size: 0.8rem; color: var(--pico-muted-color); 
 /* Nav toggle and overlay: hidden on desktop, enabled in the mobile media query */
 .nav-toggle {
   display: none;
-  background: none;
-  border: none;
+  background: none !important;
+  border: none !important;
   padding: 0.25rem 0.4rem;
   cursor: pointer;
-  color: var(--pico-color);
+  color: var(--pico-color) !important;
   font-size: 1.1rem;
   margin: 0;
   line-height: 1;
@@ -212,6 +212,8 @@ footer { text-align: center; font-size: 0.8rem; color: var(--pico-muted-color); 
 .nav-toggle:active {
   outline: none !important;
   box-shadow: none !important;
+  background: none !important;
+  color: var(--pico-color) !important;
 }
 .nav-close {
   display: none;
