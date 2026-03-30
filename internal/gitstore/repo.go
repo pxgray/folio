@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	gitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -253,9 +254,18 @@ func (r *Repo) doFetch(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("get remote: %w", err)
 	}
+	// go-git bare clones with the default refspec (+refs/heads/*:refs/remotes/origin/*)
+	// only update refs/remotes/origin/* on fetch, leaving refs/heads/* frozen at the
+	// clone-time values. Explicit ?ref=<branch> queries resolve via refs/heads/*, so
+	// they would never see new commits. Specifying both mappings keeps both in sync.
 	err = remote.FetchContext(ctx, &git.FetchOptions{
 		RemoteName: "origin",
 		Tags:       git.AllTags,
+		RefSpecs: []gitconfig.RefSpec{
+			"+refs/heads/*:refs/heads/*",
+			"+refs/heads/*:refs/remotes/origin/*",
+		},
+		Force: true,
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return fmt.Errorf("fetch: %w", err)

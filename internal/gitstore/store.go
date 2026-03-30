@@ -48,6 +48,9 @@ func (s *Store) EnsureCloned(ctx context.Context) error {
 			if err := repo.open(); err != nil {
 				return fmt.Errorf("open %s: %w", rc.Key(), err)
 			}
+			// Fetch in the background so stale caches from before the server
+			// restarted are refreshed without blocking startup.
+			go repo.triggerBackgroundFetch(context.Background())
 		}
 
 		s.repos[rc.Key()] = repo
