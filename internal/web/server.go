@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -24,6 +25,12 @@ type Server struct {
 	indexTmpl *template.Template // base.html + index.html
 	staticFS  fs.FS
 	cfg       *config.Config
+
+	repoTrusted    map[string]bool
+	localTrusted   map[string]bool
+	repoSecrets    map[string]string
+	webhookLimiter map[string]time.Time
+	webhookMu      sync.Mutex
 }
 
 // New creates a Server. tmplFS should embed templates/*.html and staticFS
@@ -50,13 +57,29 @@ func New(cfg *config.Config, store *gitstore.Store, tmplFS embed.FS, staticFS fs
 		return nil, fmt.Errorf("parse index template: %w", err)
 	}
 
+	repoTrusted := make(map[string]bool, len(cfg.Repos))
+	repoSecrets := make(map[string]string, len(cfg.Repos))
+	for _, rc := range cfg.Repos {
+		repoTrusted[rc.Key()] = rc.TrustedHTML
+		repoSecrets[rc.Key()] = rc.WebhookSecret
+	}
+
+	localTrusted := make(map[string]bool, len(cfg.Locals))
+	for _, lc := range cfg.Locals {
+		localTrusted[lc.Label] = lc.TrustedHTML
+	}
+
 	return &Server{
-		store:     store,
-		docTmpl:   docTmpl,
-		dirTmpl:   dirTmpl,
-		indexTmpl: indexTmpl,
-		staticFS:  staticFS,
-		cfg:       cfg,
+		store:          store,
+		docTmpl:        docTmpl,
+		dirTmpl:        dirTmpl,
+		indexTmpl:      indexTmpl,
+		staticFS:       staticFS,
+		cfg:            cfg,
+		repoTrusted:    repoTrusted,
+		localTrusted:   localTrusted,
+		repoSecrets:    repoSecrets,
+		webhookLimiter: make(map[string]time.Time),
 	}, nil
 }
 

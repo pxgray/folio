@@ -10,10 +10,13 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/pxgray/folio/internal/gitstore"
 )
+
+const webhookCooldown = 30 * time.Second
 
 func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	host := chi.URLParam(r, "host")
@@ -38,7 +41,8 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify HMAC if a secret is configured for this repo.
-	secret := s.repoSecret(host, owner, repo)
+	key := host + "/" + owner + "/" + repo
+	secret := s.repoSecrets[key]
 	if secret != "" {
 		sig := r.Header.Get("X-Hub-Signature-256")
 		if !verifyGitHubSignature(secret, body, sig) {
@@ -46,6 +50,15 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	s.webhookMu.Lock()
+	if last, ok := s.webhookLimiter[key]; ok && time.Since(last) < webhookCooldown {
+		s.webhookMu.Unlock()
+		httpError(w, http.StatusTooManyRequests, "rate limited")
+		return
+	}
+	s.webhookLimiter[key] = time.Now()
+	s.webhookMu.Unlock()
 
 	log.Printf("folio: webhook received for %s/%s/%s, fetching...", host, owner, repo)
 	if err := gr.FetchNow(r.Context()); err != nil {
@@ -57,16 +70,6 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprintln(w, "ok")
-}
-
-// repoSecret returns the webhook secret for the given repo, or "" if none.
-func (s *Server) repoSecret(host, owner, repo string) string {
-	for _, rc := range s.cfg.Repos {
-		if rc.Host == host && rc.Owner == owner && rc.Repo == repo {
-			return rc.WebhookSecret
-		}
-	}
-	return ""
 }
 
 // verifyGitHubSignature checks the X-Hub-Signature-256 header value against
