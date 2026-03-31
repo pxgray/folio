@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -27,32 +26,6 @@ type docData struct {
 	Ref         string
 	Nav         []nav.Item
 	CurrentPath string
-}
-
-type dirData struct {
-	Title       string
-	Entries     []gitstore.TreeEntry
-	TOC         template.HTML
-	Breadcrumbs []breadcrumb
-	RepoBase    string
-	RepoName    string
-	Ref         string
-	Nav         []nav.Item
-	CurrentPath string
-}
-
-// EntryURL builds the URL for a directory entry (called from dir.html).
-func (d dirData) EntryURL(name string, isDir bool) string {
-	var base string
-	if d.CurrentPath == "" {
-		base = d.RepoBase + "/" + name
-	} else {
-		base = d.RepoBase + "/" + d.CurrentPath + "/" + name
-	}
-	if d.Ref != "" {
-		return base + "?ref=" + url.QueryEscape(d.Ref)
-	}
-	return base
 }
 
 func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +59,7 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 
 	repoBase := "/" + host + "/" + owner + "/" + repo
 	repoName := host + "/" + owner + "/" + repo
-	s.serveRepo(w, r, gr, ref, repoBase, repoName, filePath, true, trusted)
+	s.serveRepo(w, r, gr, ref, repoBase, repoName, filePath, trusted)
 }
 
 func (s *Server) handleLocalDoc(w http.ResponseWriter, r *http.Request) {
@@ -112,28 +85,43 @@ func (s *Server) handleLocalDoc(w http.ResponseWriter, r *http.Request) {
 
 	repoBase := "/local/" + label
 	repoName := "local/" + label
-	s.serveRepo(w, r, gr, "", repoBase, repoName, filePath, false, trusted)
+	s.serveRepo(w, r, gr, "", repoBase, repoName, filePath, trusted)
 }
 
-// serveRepo resolves the ref, loads navigation, and routes to a markdown page,
-// directory page, or raw redirect. If allowRaw is false, non-.md files return 404.
-func (s *Server) serveRepo(w http.ResponseWriter, r *http.Request, repo gitstore.Repository, ref, repoBase, repoName, filePath string, allowRaw bool, trusted bool) {
+func (s *Server) serveRepo(w http.ResponseWriter, r *http.Request, repo gitstore.Repository, ref, repoBase, repoName, filePath string, trusted bool) {
 	hash, err := s.resolveRef(w, repo, ref)
 	if err != nil {
 		return
 	}
 
-	navItems := s.loadNavAndCheck(repo, hash, filePath)
-
 	if filePath == "" {
-		s.serveDirPage(w, repo, hash, repoBase, repoName, "", ref, navItems, trusted)
+		navItems := loadNav(repo, hash)
+		if leaf := firstNavLeaf(navItems); leaf != "" {
+			dest := repoBase + "/" + leaf + refQuery(ref)
+			http.Redirect(w, r, dest, http.StatusFound)
+			return
+		}
+		s.serveRepoRoot(w, repo, hash, repoBase, repoName, ref, navItems, trusted)
 		return
 	}
 
-	s.dispatchToContent(w, r, repo, hash, repoBase, repoName, filePath, ref, navItems, trusted, allowRaw)
+	navItems := s.loadNavAndCheck(repo, hash, filePath)
+	s.dispatchToContent(w, r, repo, hash, repoBase, repoName, filePath, ref, navItems, trusted)
 }
 
-// resolveRef resolves the ref and returns the hash, or writes an error response.
+func (s *Server) serveRepoRoot(w http.ResponseWriter, repo gitstore.Repository, hash plumbing.Hash, repoBase, repoName, ref string, navItems []nav.Item, trusted bool) {
+	src, err := repo.ReadBlob(hash, "index.md")
+	if err == nil {
+		s.serveMarkdownPage(w, src, repoBase, repoName, "index.md", ref, navItems, trusted)
+		return
+	}
+	if !errors.Is(err, gitstore.ErrNotFound) {
+		httpError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	httpError(w, http.StatusNotFound, "not found")
+}
+
 func (s *Server) resolveRef(w http.ResponseWriter, repo gitstore.Repository, ref string) (plumbing.Hash, error) {
 	hash, err := repo.ResolveRef(nil, ref)
 	if err != nil {
@@ -147,7 +135,6 @@ func (s *Server) resolveRef(w http.ResponseWriter, repo gitstore.Repository, ref
 	return hash, nil
 }
 
-// loadNavAndCheck loads nav items and filters them to only include paths that cover filePath.
 func (s *Server) loadNavAndCheck(repo gitstore.Repository, hash plumbing.Hash, filePath string) []nav.Item {
 	navItems := loadNav(repo, hash)
 	if !navCoversPath(navItems, filePath) {
@@ -156,17 +143,11 @@ func (s *Server) loadNavAndCheck(repo gitstore.Repository, hash plumbing.Hash, f
 	return navItems
 }
 
-// dispatchToContent routes to a markdown page, directory page, or raw redirect.
-func (s *Server) dispatchToContent(w http.ResponseWriter, r *http.Request, repo gitstore.Repository, hash plumbing.Hash, repoBase, repoName, filePath, ref string, navItems []nav.Item, trusted bool, allowRaw bool) {
+func (s *Server) dispatchToContent(w http.ResponseWriter, r *http.Request, repo gitstore.Repository, hash plumbing.Hash, repoBase, repoName, filePath, ref string, navItems []nav.Item, trusted bool) {
 	blob, err := repo.ReadBlob(hash, filePath)
 	if err == nil {
 		if strings.HasSuffix(filePath, ".md") {
 			s.serveMarkdownPage(w, blob, repoBase, repoName, filePath, ref, navItems, trusted)
-			return
-		}
-		if allowRaw {
-			rawURL := repoBase + "/-/raw/" + filePath + refQuery(ref)
-			http.Redirect(w, r, rawURL, http.StatusFound)
 			return
 		}
 		httpError(w, http.StatusNotFound, "not found: "+filePath)
@@ -179,7 +160,7 @@ func (s *Server) dispatchToContent(w http.ResponseWriter, r *http.Request, repo 
 
 	_, treeErr := repo.ReadTree(hash, filePath)
 	if treeErr == nil {
-		s.serveDirPage(w, repo, hash, repoBase, repoName, filePath, ref, navItems, trusted)
+		httpError(w, http.StatusNotFound, "not found: "+filePath)
 		return
 	}
 
@@ -218,61 +199,6 @@ func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, 
 	_, _ = w.Write(buf.Bytes())
 }
 
-func (s *Server) serveDirPage(w http.ResponseWriter, repo gitstore.Repository, hash plumbing.Hash, repoBase, repoName, dirPath, ref string, navItems []nav.Item, trusted bool) {
-	entries, err := repo.ReadTree(hash, dirPath)
-	if err != nil {
-		httpError(w, http.StatusNotFound, "not found: "+dirPath)
-		return
-	}
-
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].IsDir != entries[j].IsDir {
-			return entries[i].IsDir
-		}
-		return entries[i].Name < entries[j].Name
-	})
-
-	// If index.md exists, render it as a doc page instead of the directory listing.
-	for _, e := range entries {
-		if e.Name == "index.md" && !e.IsDir {
-			indexPath := "index.md"
-			if dirPath != "" {
-				indexPath = dirPath + "/index.md"
-			}
-			if src, err := repo.ReadBlob(hash, indexPath); err == nil {
-				s.serveMarkdownPage(w, src, repoBase, repoName, indexPath, ref, navItems, trusted)
-				return
-			}
-			break
-		}
-	}
-
-	title := repoName
-	if dirPath != "" {
-		title = dirPath
-	}
-
-	data := dirData{
-		Title:       title,
-		Entries:     entries,
-		Breadcrumbs: buildBreadcrumbs(repoBase, dirPath, ref),
-		RepoBase:    repoBase,
-		RepoName:    repoName,
-		Ref:         ref,
-		Nav:         navItems,
-		CurrentPath: dirPath,
-	}
-
-	var buf bytes.Buffer
-	if err := s.dirTmpl.ExecuteTemplate(&buf, "base.html", data); err != nil {
-		log.Printf("folio: render dir %s: %v", dirPath, err)
-		httpError(w, http.StatusInternalServerError, "template error")
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(buf.Bytes())
-}
-
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Title       string
@@ -299,15 +225,24 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(buf.Bytes())
 }
 
-// navCoversPath reports whether filePath is explicitly covered by the nav items —
-// either as an exact leaf match or as a directory that contains at least one leaf.
+func firstNavLeaf(items []nav.Item) string {
+	for _, item := range items {
+		if item.Path != "" {
+			return item.Path
+		}
+		if child := firstNavLeaf(item.Children); child != "" {
+			return child
+		}
+	}
+	return ""
+}
+
 func navCoversPath(items []nav.Item, filePath string) bool {
 	for _, item := range items {
 		if item.Path != "" {
 			if item.Path == filePath {
 				return true
 			}
-			// filePath is a directory ancestor of this leaf.
 			if filePath != "" && strings.HasPrefix(item.Path, filePath+"/") {
 				return true
 			}
@@ -319,9 +254,6 @@ func navCoversPath(items []nav.Item, filePath string) bool {
 	return false
 }
 
-// loadNav loads navigation items for the repo. It first tries to read folio.yml
-// from the repo root; if absent or unparseable, it falls back to auto-generating
-// nav from the directory tree.
 func loadNav(repo gitstore.Repository, hash plumbing.Hash) []nav.Item {
 	if data, err := repo.ReadBlob(hash, "folio.yml"); err == nil {
 		if _, items, err := nav.Parse(data); err == nil {
@@ -342,7 +274,6 @@ func loadNav(repo gitstore.Repository, hash plumbing.Hash) []nav.Item {
 	return nav.AutoGenerate(walker, "")
 }
 
-// headingTitle extracts the text of the first # heading from Markdown source.
 func headingTitle(src string) string {
 	for _, line := range strings.SplitN(src, "\n", 100) {
 		line = strings.TrimSpace(line)

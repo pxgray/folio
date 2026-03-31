@@ -130,14 +130,23 @@ func TestHandleDoc_DirectoryListing(t *testing.T) {
 	ts := makeTestServer(t, bareDir)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/example.com/testuser/testrepo")
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Get(ts.URL + "/example.com/testuser/testrepo")
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("status = %d, want 302 (redirect to first nav leaf)", resp.StatusCode)
+	}
+	loc := resp.Header.Get("Location")
+	if !strings.Contains(loc, "/docs/index.md") {
+		t.Errorf("redirect Location = %q, want /docs/index.md", loc)
 	}
 }
 
@@ -339,13 +348,18 @@ func TestHandleLocalDoc_DirectoryListing(t *testing.T) {
 	ts := makeTestServerWithLocal(t, localDir)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/local/testlocal")
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Get(ts.URL + "/local/testlocal")
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("status = %d, want 302 (redirect to first nav leaf)", resp.StatusCode)
 	}
 }
 
@@ -437,7 +451,7 @@ func makeTestServerForHTML(t *testing.T, bareDir string) *httptest.Server {
 	return makeTestServerForRepo(t, bareDir, "htmlrepo")
 }
 
-func TestHandleRaw_HTMLServedAsPlainText(t *testing.T) {
+func TestHandleRaw_HTMLBlocked(t *testing.T) {
 	bareDir := makeTestBareRepoWithHTML(t)
 	ts := makeTestServerForHTML(t, bareDir)
 	defer ts.Close()
@@ -448,12 +462,8 @@ func TestHandleRaw_HTMLServedAsPlainText(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
-	}
-	ct := resp.Header.Get("Content-Type")
-	if !strings.HasPrefix(ct, "text/plain") {
-		t.Errorf("Content-Type = %q, want text/plain for .html files", ct)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (html blocked by extension allowlist)", resp.StatusCode)
 	}
 }
 

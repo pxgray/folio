@@ -57,6 +57,8 @@ Open `http://localhost:8080` in your browser to see the repo list, or navigate d
 http://localhost:8080/github.com/your-username/your-repo/
 ```
 
+Visiting the repo root redirects you to the first Markdown file found in the navigation tree (from `folio.yml` or auto-generated from the directory structure).
+
 ## View a specific commit
 
 Append `?ref=` to any URL:

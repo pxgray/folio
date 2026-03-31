@@ -11,10 +11,11 @@ import (
 )
 
 type Config struct {
-	Server ServerConfig  `toml:"server"`
-	Cache  CacheConfig   `toml:"cache"`
-	Repos  []RepoConfig  `toml:"repos"`
-	Locals []LocalConfig `toml:"local"`
+	Server        ServerConfig        `toml:"server"`
+	Cache         CacheConfig         `toml:"cache"`
+	Repos         []RepoConfig        `toml:"repos"`
+	Locals        []LocalConfig       `toml:"local"`
+	RootArtifacts RootArtifactsConfig `toml:"root_artifacts"`
 }
 
 type ServerConfig struct {
@@ -27,18 +28,24 @@ type CacheConfig struct {
 }
 
 type RepoConfig struct {
-	Host          string `toml:"host"`
-	Owner         string `toml:"owner"`
-	Repo          string `toml:"repo"`
-	Remote        string `toml:"remote"`
-	WebhookSecret string `toml:"webhook_secret"`
-	TrustedHTML   bool   `toml:"trusted_html"`
+	Host          string            `toml:"host"`
+	Owner         string            `toml:"owner"`
+	Repo          string            `toml:"repo"`
+	Remote        string            `toml:"remote"`
+	WebhookSecret string            `toml:"webhook_secret"`
+	TrustedHTML   bool              `toml:"trusted_html"`
+	WebArtifacts  map[string]string `toml:"web_artifacts"`
 }
 
 type LocalConfig struct {
 	Label       string `toml:"label"`
 	Path        string `toml:"path"`
 	TrustedHTML bool   `toml:"trusted_html"`
+}
+
+type RootArtifactsConfig struct {
+	Dir   string            `toml:"dir"`
+	Files map[string]string `toml:"files"`
 }
 
 // Key returns the canonical string key for a repo: "host/owner/repo".

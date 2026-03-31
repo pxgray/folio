@@ -10,12 +10,60 @@ import (
 	"github.com/pxgray/folio/internal/gitstore"
 )
 
+const maxRawSize = 10 * 1024 * 1024
+
+var allowedExtensions = map[string]bool{
+	".png":   true,
+	".jpg":   true,
+	".jpeg":  true,
+	".gif":   true,
+	".webp":  true,
+	".svg":   true,
+	".ico":   true,
+	".bmp":   true,
+	".tiff":  true,
+	".avif":  true,
+	".woff":  true,
+	".woff2": true,
+	".ttf":   true,
+	".eot":   true,
+	".otf":   true,
+	".css":   true,
+	".pdf":   true,
+	".json":  true,
+	".xml":   true,
+	".yaml":  true,
+	".yml":   true,
+	".csv":   true,
+	".tsv":   true,
+	".mp4":   true,
+	".webm":  true,
+	".ogg":   true,
+	".mp3":   true,
+	".wav":   true,
+}
+
 func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 	host := chi.URLParam(r, "host")
 	owner := chi.URLParam(r, "owner")
 	repo := chi.URLParam(r, "repo")
 	filePath := strings.TrimPrefix(chi.URLParam(r, "*"), "/")
 	ref := r.URL.Query().Get("ref")
+
+	if !isExtensionAllowed(filePath) {
+		httpError(w, http.StatusNotFound, "not found")
+		return
+	}
+
+	if hasBlockedPrefix(filePath) {
+		httpError(w, http.StatusNotFound, "not found")
+		return
+	}
+
+	if strings.Contains(filePath, "..") {
+		httpError(w, http.StatusNotFound, "not found")
+		return
+	}
 
 	gr, err := s.store.Get(host, owner, repo)
 	if err != nil {
@@ -47,7 +95,11 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Detect content type from first 512 bytes, then override executable types.
+	if len(blob) > maxRawSize {
+		httpError(w, http.StatusNotFound, "file too large")
+		return
+	}
+
 	ct := http.DetectContentType(blob)
 	switch strings.ToLower(filepath.Ext(filePath)) {
 	case ".html", ".htm", ".xhtml", ".svg", ".js", ".mjs":
@@ -56,4 +108,19 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", ct)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(blob)
+}
+
+func isExtensionAllowed(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return allowedExtensions[ext]
+}
+
+func hasBlockedPrefix(path string) bool {
+	parts := strings.Split(path, "/")
+	for _, part := range parts {
+		if strings.HasPrefix(part, ".") || strings.HasPrefix(part, "_") {
+			return true
+		}
+	}
+	return false
 }

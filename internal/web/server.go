@@ -17,20 +17,28 @@ import (
 	"github.com/pxgray/folio/internal/gitstore"
 )
 
+// repoArtifactConfig holds per-repo artifact configuration.
+type repoArtifactConfig struct {
+	artifacts map[string]string
+}
+
 // Server is the Folio HTTP server.
 type Server struct {
 	store     *gitstore.Store
 	docTmpl   *template.Template // base.html + doc.html
-	dirTmpl   *template.Template // base.html + dir.html
 	indexTmpl *template.Template // base.html + index.html
 	staticFS  fs.FS
 	cfg       *config.Config
 
-	repoTrusted    map[string]bool
-	localTrusted   map[string]bool
-	repoSecrets    map[string]string
-	webhookLimiter map[string]time.Time
-	webhookMu      sync.Mutex
+	repoTrusted        map[string]bool
+	localTrusted       map[string]bool
+	repoSecrets        map[string]string
+	repoArtifactConfig map[string]repoArtifactConfig
+	webhookLimiter     map[string]time.Time
+	webhookMu          sync.Mutex
+
+	rootArtifactDir   string
+	rootArtifactFiles map[string]string
 }
 
 // New creates a Server. tmplFS should embed templates/*.html and staticFS
@@ -41,16 +49,9 @@ func New(cfg *config.Config, store *gitstore.Store, tmplFS embed.FS, staticFS fs
 		"not":        func(b bool) bool { return !b },
 	}
 
-	// Each page type gets its own template set (base + page-specific).
-	// This prevents the {{define "content"}} blocks from colliding in a shared set,
-	// which would cause the last-parsed file's block to win for all pages.
 	docTmpl, err := template.New("").Funcs(funcMap).ParseFS(tmplFS, "templates/base.html", "templates/doc.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse doc template: %w", err)
-	}
-	dirTmpl, err := template.New("").Funcs(funcMap).ParseFS(tmplFS, "templates/base.html", "templates/dir.html")
-	if err != nil {
-		return nil, fmt.Errorf("parse dir template: %w", err)
 	}
 	indexTmpl, err := template.New("").Funcs(funcMap).ParseFS(tmplFS, "templates/base.html", "templates/index.html")
 	if err != nil {
@@ -59,9 +60,11 @@ func New(cfg *config.Config, store *gitstore.Store, tmplFS embed.FS, staticFS fs
 
 	repoTrusted := make(map[string]bool, len(cfg.Repos))
 	repoSecrets := make(map[string]string, len(cfg.Repos))
+	repoArtifacts := make(map[string]repoArtifactConfig, len(cfg.Repos))
 	for _, rc := range cfg.Repos {
 		repoTrusted[rc.Key()] = rc.TrustedHTML
 		repoSecrets[rc.Key()] = rc.WebhookSecret
+		repoArtifacts[rc.Key()] = repoArtifactConfig{artifacts: rc.WebArtifacts}
 	}
 
 	localTrusted := make(map[string]bool, len(cfg.Locals))
@@ -70,16 +73,18 @@ func New(cfg *config.Config, store *gitstore.Store, tmplFS embed.FS, staticFS fs
 	}
 
 	return &Server{
-		store:          store,
-		docTmpl:        docTmpl,
-		dirTmpl:        dirTmpl,
-		indexTmpl:      indexTmpl,
-		staticFS:       staticFS,
-		cfg:            cfg,
-		repoTrusted:    repoTrusted,
-		localTrusted:   localTrusted,
-		repoSecrets:    repoSecrets,
-		webhookLimiter: make(map[string]time.Time),
+		store:              store,
+		docTmpl:            docTmpl,
+		indexTmpl:          indexTmpl,
+		staticFS:           staticFS,
+		cfg:                cfg,
+		repoTrusted:        repoTrusted,
+		localTrusted:       localTrusted,
+		repoSecrets:        repoSecrets,
+		repoArtifactConfig: repoArtifacts,
+		webhookLimiter:     make(map[string]time.Time),
+		rootArtifactDir:    cfg.RootArtifacts.Dir,
+		rootArtifactFiles:  cfg.RootArtifacts.Files,
 	}, nil
 }
 
@@ -89,15 +94,21 @@ func (s *Server) Handler() http.Handler {
 	r.Use(securityHeadersMiddleware)
 	r.Use(loggingMiddleware)
 
-	// Static assets under /-/static/ (clear namespace, can't conflict with /{host}/...).
 	r.Handle("/-/static/*", http.StripPrefix("/-/static/", http.FileServer(http.FS(s.staticFS))))
 
-	// Root index.
 	r.Get("/", s.handleIndex)
 
-	// Repo routes.
+	for _, name := range artifactNames {
+		r.Get("/"+name, s.handleRootArtifact)
+	}
+
 	r.Post("/{host}/{owner}/{repo}/-/webhook", s.handleWebhook)
 	r.Get("/{host}/{owner}/{repo}/-/raw/*", s.handleRaw)
+
+	for _, name := range artifactNames {
+		r.Get("/{host}/{owner}/{repo}/"+name, s.handleRepoArtifact)
+	}
+
 	r.Get("/{host}/{owner}/{repo}", s.handleDoc)
 	r.Get("/{host}/{owner}/{repo}/*", s.handleDoc)
 
