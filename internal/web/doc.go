@@ -175,6 +175,11 @@ func (s *Server) dispatchToContent(w http.ResponseWriter, r *http.Request, repo 
 
 	_, treeErr := repo.ReadTree(hash, filePath)
 	if treeErr == nil {
+		indexBlob, indexErr := repo.ReadBlob(hash, filePath+"/index.md")
+		if indexErr == nil {
+			s.serveMarkdownPage(w, indexBlob, repoBase, repoName, filePath+"/index.md", ref, navResult, trusted)
+			return
+		}
 		httpError(w, http.StatusNotFound, "not found: "+filePath)
 		return
 	}
