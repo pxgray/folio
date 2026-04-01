@@ -18,9 +18,29 @@ type Item struct {
 	Children []Item
 }
 
+// Section represents a top-level navigation section with its own sidebar.
+type Section struct {
+	Label       string
+	Nav         []Item
+	DefaultPath string // first leaf path, for tab linking
+}
+
+// ParseResult holds the result of parsing a folio.yml file.
+type ParseResult struct {
+	Title    string
+	Sections []Section // always populated; single nav becomes one section
+	IsMulti  bool      // true when sections were explicitly defined
+}
+
 // folioYML is the parsed shape of the folio.yml nav config.
 type folioYML struct {
-	Title string    `yaml:"title"`
+	Title    string    `yaml:"title"`
+	Sections []section `yaml:"sections"`
+	Nav      yaml.Node `yaml:"nav"`
+}
+
+type section struct {
+	Label string    `yaml:"label"`
 	Nav   yaml.Node `yaml:"nav"`
 }
 
@@ -35,13 +55,86 @@ type folioYML struct {
 //	    - API: docs/api/index.md
 //	    - Config: docs/configuration.md
 func Parse(data []byte) (title string, items []Item, err error) {
-	var f folioYML
-	if err = yaml.Unmarshal(data, &f); err != nil {
+	result, err := ParseWithSections(data)
+	if err != nil {
 		return "", nil, err
 	}
-	title = f.Title
-	items = parseNavNode(&f.Nav)
+	title = result.Title
+	if len(result.Sections) > 0 {
+		items = result.Sections[0].Nav
+	}
 	return title, items, nil
+}
+
+// ParseWithSections parses a folio.yml file and returns sections if defined,
+// or falls back to single nav parsing.
+func ParseWithSections(data []byte) (ParseResult, error) {
+	var f folioYML
+	if err := yaml.Unmarshal(data, &f); err != nil {
+		return ParseResult{}, err
+	}
+
+	result := ParseResult{Title: f.Title}
+
+	if len(f.Sections) > 0 {
+		result.Sections = make([]Section, 0, len(f.Sections))
+		for _, s := range f.Sections {
+			nav := parseNavNode(&s.Nav)
+			result.Sections = append(result.Sections, Section{
+				Label:       s.Label,
+				Nav:         nav,
+				DefaultPath: firstLeafPath(nav),
+			})
+		}
+		result.IsMulti = true
+	} else {
+		nav := parseNavNode(&f.Nav)
+		result.Sections = []Section{{Nav: nav, DefaultPath: firstLeafPath(nav)}}
+	}
+
+	return result, nil
+}
+
+// firstLeafPath finds the path of the first leaf node in a nav tree.
+func firstLeafPath(items []Item) string {
+	for _, item := range items {
+		if item.Path != "" {
+			return item.Path
+		}
+		if p := firstLeafPath(item.Children); p != "" {
+			return p
+		}
+	}
+	return ""
+}
+
+// FindActiveSection returns the section whose nav covers the given file path.
+// Returns the section, its index, and whether one was found.
+func FindActiveSection(sections []Section, filePath string) (Section, int, bool) {
+	for i, s := range sections {
+		if navCoversPath(s.Nav, filePath) {
+			return s, i, true
+		}
+	}
+	return Section{}, -1, false
+}
+
+// navCoversPath checks if any nav item's path matches or is a descendant of the given path.
+func navCoversPath(items []Item, filePath string) bool {
+	for _, item := range items {
+		if item.Path != "" {
+			if item.Path == filePath {
+				return true
+			}
+			if filePath != "" && strings.HasPrefix(item.Path, filePath+"/") {
+				return true
+			}
+		}
+		if navCoversPath(item.Children, filePath) {
+			return true
+		}
+	}
+	return false
 }
 
 // parseNavNode converts a yaml.Node (expected to be a sequence) into []Item.

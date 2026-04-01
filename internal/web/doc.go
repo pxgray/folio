@@ -17,15 +17,17 @@ import (
 )
 
 type docData struct {
-	Title       string
-	Content     template.HTML
-	TOC         template.HTML
-	Breadcrumbs []breadcrumb
-	RepoBase    string
-	RepoName    string
-	Ref         string
-	Nav         []nav.Item
-	CurrentPath string
+	Title         string
+	Content       template.HTML
+	TOC           template.HTML
+	Breadcrumbs   []breadcrumb
+	RepoBase      string
+	RepoName      string
+	Ref           string
+	Nav           []nav.Item
+	CurrentPath   string
+	Sections      []nav.Section
+	ActiveSection int
 }
 
 func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
@@ -95,24 +97,36 @@ func (s *Server) serveRepo(w http.ResponseWriter, r *http.Request, repo gitstore
 	}
 
 	if filePath == "" {
-		navItems := loadNav(repo, hash)
+		navResult := loadNavResult(repo, hash)
+		navItems := sectionsToNav(navResult.Sections)
 		if leaf := firstNavLeaf(navItems); leaf != "" {
 			dest := repoBase + "/" + leaf + refQuery(ref)
 			http.Redirect(w, r, dest, http.StatusFound)
 			return
 		}
-		s.serveRepoRoot(w, repo, hash, repoBase, repoName, ref, navItems, trusted)
+		s.serveRepoRoot(w, repo, hash, repoBase, repoName, ref, navResult, trusted)
 		return
 	}
 
-	navItems := s.loadNavAndCheck(repo, hash, filePath)
-	s.dispatchToContent(w, r, repo, hash, repoBase, repoName, filePath, ref, navItems, trusted)
+	navResult := s.loadNavAndCheck(repo, hash, filePath)
+	s.dispatchToContent(w, r, repo, hash, repoBase, repoName, filePath, ref, navResult, trusted)
 }
 
-func (s *Server) serveRepoRoot(w http.ResponseWriter, repo gitstore.Repository, hash plumbing.Hash, repoBase, repoName, ref string, navItems []nav.Item, trusted bool) {
+func sectionsToNav(sections []nav.Section) []nav.Item {
+	if len(sections) == 0 {
+		return nil
+	}
+	var all []nav.Item
+	for _, s := range sections {
+		all = append(all, s.Nav...)
+	}
+	return all
+}
+
+func (s *Server) serveRepoRoot(w http.ResponseWriter, repo gitstore.Repository, hash plumbing.Hash, repoBase, repoName, ref string, navResult nav.ParseResult, trusted bool) {
 	src, err := repo.ReadBlob(hash, "index.md")
 	if err == nil {
-		s.serveMarkdownPage(w, src, repoBase, repoName, "index.md", ref, navItems, trusted)
+		s.serveMarkdownPage(w, src, repoBase, repoName, "index.md", ref, navResult, trusted)
 		return
 	}
 	if !errors.Is(err, gitstore.ErrNotFound) {
@@ -135,19 +149,20 @@ func (s *Server) resolveRef(w http.ResponseWriter, repo gitstore.Repository, ref
 	return hash, nil
 }
 
-func (s *Server) loadNavAndCheck(repo gitstore.Repository, hash plumbing.Hash, filePath string) []nav.Item {
-	navItems := loadNav(repo, hash)
+func (s *Server) loadNavAndCheck(repo gitstore.Repository, hash plumbing.Hash, filePath string) nav.ParseResult {
+	navResult := loadNavResult(repo, hash)
+	navItems := sectionsToNav(navResult.Sections)
 	if !navCoversPath(navItems, filePath) {
-		navItems = nil
+		navResult.Sections = nil
 	}
-	return navItems
+	return navResult
 }
 
-func (s *Server) dispatchToContent(w http.ResponseWriter, r *http.Request, repo gitstore.Repository, hash plumbing.Hash, repoBase, repoName, filePath, ref string, navItems []nav.Item, trusted bool) {
+func (s *Server) dispatchToContent(w http.ResponseWriter, r *http.Request, repo gitstore.Repository, hash plumbing.Hash, repoBase, repoName, filePath, ref string, navResult nav.ParseResult, trusted bool) {
 	blob, err := repo.ReadBlob(hash, filePath)
 	if err == nil {
 		if strings.HasSuffix(filePath, ".md") {
-			s.serveMarkdownPage(w, blob, repoBase, repoName, filePath, ref, navItems, trusted)
+			s.serveMarkdownPage(w, blob, repoBase, repoName, filePath, ref, navResult, trusted)
 			return
 		}
 		httpError(w, http.StatusNotFound, "not found: "+filePath)
@@ -167,7 +182,7 @@ func (s *Server) dispatchToContent(w http.ResponseWriter, r *http.Request, repo 
 	httpError(w, http.StatusNotFound, "not found: "+filePath)
 }
 
-func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, repoName, filePath, ref string, navItems []nav.Item, trusted bool) {
+func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, repoName, filePath, ref string, navResult nav.ParseResult, trusted bool) {
 	result, err := render.Render(src, repoBase, filePath, ref, trusted)
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "render error: "+err.Error())
@@ -177,16 +192,28 @@ func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, 
 	if title == "" {
 		title = filePath
 	}
+	navItems := sectionsToNav(navResult.Sections)
+	activeIdx := -1
+	var sections []nav.Section
+	if navResult.IsMulti && len(navResult.Sections) > 0 {
+		sections = navResult.Sections
+		_, idx, found := nav.FindActiveSection(navResult.Sections, filePath)
+		if found {
+			activeIdx = idx
+		}
+	}
 	data := docData{
-		Title:       title,
-		Content:     result.Content,
-		TOC:         result.TOC,
-		Breadcrumbs: buildBreadcrumbs(repoBase, filePath, ref),
-		RepoBase:    repoBase,
-		RepoName:    repoName,
-		Ref:         ref,
-		Nav:         navItems,
-		CurrentPath: filePath,
+		Title:         title,
+		Content:       result.Content,
+		TOC:           result.TOC,
+		Breadcrumbs:   buildBreadcrumbs(repoBase, filePath, ref),
+		RepoBase:      repoBase,
+		RepoName:      repoName,
+		Ref:           ref,
+		Nav:           navItems,
+		CurrentPath:   filePath,
+		Sections:      sections,
+		ActiveSection: activeIdx,
 	}
 
 	var buf bytes.Buffer
@@ -201,14 +228,16 @@ func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, 
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	data := struct {
-		Title       string
-		Repos       interface{}
-		Locals      interface{}
-		TOC         template.HTML
-		RepoBase    string
-		RepoName    string
-		Breadcrumbs []breadcrumb
-		Nav         []nav.Item
+		Title         string
+		Repos         interface{}
+		Locals        interface{}
+		TOC           template.HTML
+		RepoBase      string
+		RepoName      string
+		Breadcrumbs   []breadcrumb
+		Nav           []nav.Item
+		Sections      []nav.Section
+		ActiveSection int
 	}{
 		Title:  "Folio",
 		Repos:  s.store.Repos(),
@@ -254,10 +283,10 @@ func navCoversPath(items []nav.Item, filePath string) bool {
 	return false
 }
 
-func loadNav(repo gitstore.Repository, hash plumbing.Hash) []nav.Item {
+func loadNavResult(repo gitstore.Repository, hash plumbing.Hash) nav.ParseResult {
 	if data, err := repo.ReadBlob(hash, "folio.yml"); err == nil {
-		if _, items, err := nav.Parse(data); err == nil {
-			return items
+		if result, err := nav.ParseWithSections(data); err == nil {
+			return result
 		}
 	}
 	walker := func(dirPath string) ([]nav.WalkEntry, error) {
@@ -271,7 +300,7 @@ func loadNav(repo gitstore.Repository, hash plumbing.Hash) []nav.Item {
 		}
 		return result, nil
 	}
-	return nav.AutoGenerate(walker, "")
+	return nav.ParseResult{Sections: []nav.Section{{Nav: nav.AutoGenerate(walker, "")}}}
 }
 
 func headingTitle(src string) string {

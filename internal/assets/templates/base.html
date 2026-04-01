@@ -20,6 +20,18 @@
     <button class="theme-toggle" id="theme-btn">☾</button>
   </header>
 
+  {{if .Sections}}
+  <nav class="topnav" aria-label="sections">
+    <ul class="topnav-list">
+      {{range $i, $section := .Sections}}
+      <li class="topnav-item{{if eq $i $.ActiveSection}} active{{end}}">
+        <a href="{{$.RepoBase}}/{{$section.DefaultPath}}{{if $.Ref}}?ref={{$.Ref}}{{end}}">{{$section.Label}}</a>
+      </li>
+      {{end}}
+    </ul>
+  </nav>
+  {{end}}
+
   <div class="page-body">
     <div class="nav-overlay" id="nav-overlay"></div>
 

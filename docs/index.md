@@ -1,8 +1,6 @@
 ---
 toc: true
 ---
-toc: true
----
 # Folio
 
 Folio is a lightweight documentation server that renders Markdown files directly from public git repositories. Each configured repository acts as its own site, with configurable root web artifacts and auto-redirect to the first Markdown file.
