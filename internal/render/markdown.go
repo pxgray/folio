@@ -15,6 +15,7 @@ import (
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
 	"go.abhg.dev/goldmark/frontmatter"
+	"go.abhg.dev/goldmark/mermaid"
 	"go.abhg.dev/goldmark/toc"
 )
 
@@ -28,6 +29,8 @@ var untrustedPolicy = func() *bluemonday.Policy {
 	p.AllowAttrs("colspan", "rowspan").OnElements("td", "th")
 	// Preserve chroma syntax-highlighting classes on code elements.
 	p.AllowAttrs("class").OnElements("pre", "code", "span")
+	// Preserve mermaid diagram code attributes.
+	p.AllowAttrs("data-language").OnElements("pre", "code")
 	return p
 }()
 
@@ -61,6 +64,7 @@ func Render(src []byte, repoBase, filePath, ref string, trusted bool) (Result, e
 			extension.TaskList,
 			&frontmatter.Extender{},
 			&GridTableExtension{},
+			&mermaid.Extender{},
 			highlighting.NewHighlighting(
 				highlighting.WithStyle("github"),
 				highlighting.WithFormatOptions(chromahtml.WithClasses(true)),
