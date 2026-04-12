@@ -42,8 +42,6 @@ func Open(path string) (*SQLiteStore, error) {
 func (s *SQLiteStore) Close() error { return s.db.Close() }
 
 const schema = `
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS users (
     id         INTEGER PRIMARY KEY,
     email      TEXT UNIQUE NOT NULL,
@@ -96,6 +94,10 @@ CREATE TABLE IF NOT EXISTS repo_web_artifacts (
     path    TEXT NOT NULL,
     UNIQUE(repo_id, name)
 );
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_repos_owner_id ON repos(owner_id);
+CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user_id ON oauth_accounts(user_id);
 `
 
 func (s *SQLiteStore) migrate() error {
