@@ -34,7 +34,7 @@ type Repo struct {
 	RemoteURL     string
 	WebhookSecret string
 	TrustedHTML   bool
-	StaleTTLSecs  int64
+	StaleTTLSecs  int64 // seconds; multiply by time.Second before passing to gitstore
 	Status        string
 	StatusMsg     string
 	CreatedAt     time.Time
