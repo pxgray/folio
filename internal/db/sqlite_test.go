@@ -3,6 +3,7 @@ package db_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/pxgray/folio/internal/db"
 )
@@ -125,5 +126,79 @@ func TestOAuthAccountCRUD(t *testing.T) {
 	accounts2, _ := s.ListOAuthAccounts(ctx, u.ID)
 	if len(accounts2) != 0 {
 		t.Errorf("expected 0 accounts after delete, got %d", len(accounts2))
+	}
+}
+
+func TestSessionCRUD(t *testing.T) {
+	ctx := context.Background()
+	s := openTestDB(t)
+
+	u := &db.User{Email: "dave@example.com", Name: "Dave"}
+	_ = s.CreateUser(ctx, u)
+
+	sess := &db.Session{
+		Token:     "tok-abc123",
+		UserID:    u.ID,
+		ExpiresAt: time.Now().UTC().Add(30 * 24 * time.Hour),
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.CreateSession(ctx, sess); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	// GetSession
+	got, err := s.GetSession(ctx, "tok-abc123")
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if got.UserID != u.ID {
+		t.Errorf("wrong UserID: %d", got.UserID)
+	}
+
+	// TouchSession (extend expiry)
+	newExpiry := time.Now().UTC().Add(60 * 24 * time.Hour)
+	if err := s.TouchSession(ctx, "tok-abc123", newExpiry); err != nil {
+		t.Fatalf("TouchSession: %v", err)
+	}
+	got2, _ := s.GetSession(ctx, "tok-abc123")
+	if got2.ExpiresAt.Before(newExpiry.Add(-time.Second)) {
+		t.Errorf("TouchSession did not update expiry")
+	}
+
+	// DeleteExpiredSessions — create an expired one first
+	expired := &db.Session{
+		Token:     "tok-expired",
+		UserID:    u.ID,
+		ExpiresAt: time.Now().UTC().Add(-time.Hour),
+		CreatedAt: time.Now().UTC().Add(-time.Hour),
+	}
+	_ = s.CreateSession(ctx, expired)
+	if err := s.DeleteExpiredSessions(ctx); err != nil {
+		t.Fatalf("DeleteExpiredSessions: %v", err)
+	}
+	_, err = s.GetSession(ctx, "tok-expired")
+	if err == nil {
+		t.Fatal("expected error for expired/deleted session")
+	}
+
+	// DeleteUserSessions
+	if err := s.DeleteUserSessions(ctx, u.ID); err != nil {
+		t.Fatalf("DeleteUserSessions: %v", err)
+	}
+	_, err = s.GetSession(ctx, "tok-abc123")
+	if err == nil {
+		t.Fatal("expected session gone after DeleteUserSessions")
+	}
+
+	// DeleteSession (individual)
+	sess2 := &db.Session{Token: "tok-xyz", UserID: u.ID,
+		ExpiresAt: time.Now().UTC().Add(time.Hour), CreatedAt: time.Now().UTC()}
+	_ = s.CreateSession(ctx, sess2)
+	if err := s.DeleteSession(ctx, "tok-xyz"); err != nil {
+		t.Fatalf("DeleteSession: %v", err)
+	}
+	_, err = s.GetSession(ctx, "tok-xyz")
+	if err == nil {
+		t.Fatal("expected error for deleted session")
 	}
 }

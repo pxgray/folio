@@ -240,27 +240,53 @@ func (s *SQLiteStore) ListOAuthAccounts(ctx context.Context, userID int64) ([]*O
 }
 
 func (s *SQLiteStore) CreateSession(ctx context.Context, sess *Session) error {
-	panic("not implemented")
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)`,
+		sess.Token, sess.UserID,
+		sess.ExpiresAt.UTC().Format(time.RFC3339),
+		sess.CreatedAt.UTC().Format(time.RFC3339),
+	)
+	return err
 }
 
 func (s *SQLiteStore) GetSession(ctx context.Context, token string) (*Session, error) {
-	panic("not implemented")
+	var sess Session
+	var expiresAt, createdAt string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT token, user_id, expires_at, created_at FROM sessions WHERE token = ?`, token,
+	).Scan(&sess.Token, &sess.UserID, &expiresAt, &createdAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("session not found: %w", err)
+	}
+	if err != nil {
+		return nil, err
+	}
+	sess.ExpiresAt, _ = time.Parse(time.RFC3339, expiresAt)
+	sess.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	return &sess, nil
 }
 
 func (s *SQLiteStore) DeleteSession(ctx context.Context, token string) error {
-	panic("not implemented")
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token = ?`, token)
+	return err
 }
 
 func (s *SQLiteStore) DeleteUserSessions(ctx context.Context, userID int64) error {
-	panic("not implemented")
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID)
+	return err
 }
 
 func (s *SQLiteStore) TouchSession(ctx context.Context, token string, expiresAt time.Time) error {
-	panic("not implemented")
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET expires_at = ? WHERE token = ?`,
+		expiresAt.UTC().Format(time.RFC3339), token)
+	return err
 }
 
 func (s *SQLiteStore) DeleteExpiredSessions(ctx context.Context) error {
-	panic("not implemented")
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM sessions WHERE expires_at < ?`, time.Now().UTC().Format(time.RFC3339))
+	return err
 }
 
 func (s *SQLiteStore) CreateRepo(ctx context.Context, r *Repo) error {
