@@ -202,3 +202,95 @@ func TestSessionCRUD(t *testing.T) {
 		t.Fatal("expected error for deleted session")
 	}
 }
+
+func TestRepoCRUD(t *testing.T) {
+	ctx := context.Background()
+	s := openTestDB(t)
+
+	owner := &db.User{Email: "erin@example.com", Name: "Erin"}
+	_ = s.CreateUser(ctx, owner)
+
+	r := &db.Repo{
+		OwnerID:   owner.ID,
+		Host:      "github.com",
+		RepoOwner: "acme",
+		RepoName:  "docs",
+		Status:    db.RepoStatusPending,
+	}
+	if err := s.CreateRepo(ctx, r); err != nil {
+		t.Fatalf("CreateRepo: %v", err)
+	}
+	if r.ID == 0 {
+		t.Fatal("expected ID to be set")
+	}
+
+	// GetRepo
+	got, err := s.GetRepo(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("GetRepo: %v", err)
+	}
+	if got.RepoName != "docs" || got.Status != db.RepoStatusPending {
+		t.Errorf("GetRepo mismatch: %+v", got)
+	}
+
+	// GetRepoByKey
+	got2, err := s.GetRepoByKey(ctx, "github.com", "acme", "docs")
+	if err != nil {
+		t.Fatalf("GetRepoByKey: %v", err)
+	}
+	if got2.ID != r.ID {
+		t.Errorf("GetRepoByKey returned wrong ID")
+	}
+
+	// Key() helper
+	if r.Key() != "github.com/acme/docs" {
+		t.Errorf("Key() = %q", r.Key())
+	}
+
+	// ListReposByOwner
+	repos, err := s.ListReposByOwner(ctx, owner.ID)
+	if err != nil {
+		t.Fatalf("ListReposByOwner: %v", err)
+	}
+	if len(repos) != 1 {
+		t.Errorf("expected 1 repo, got %d", len(repos))
+	}
+
+	// ListAllRepos
+	all, err := s.ListAllRepos(ctx)
+	if err != nil {
+		t.Fatalf("ListAllRepos: %v", err)
+	}
+	if len(all) != 1 {
+		t.Errorf("expected 1 repo in ListAllRepos, got %d", len(all))
+	}
+
+	// UpdateRepoStatus
+	if err := s.UpdateRepoStatus(ctx, r.ID, db.RepoStatusReady, ""); err != nil {
+		t.Fatalf("UpdateRepoStatus: %v", err)
+	}
+	got3, _ := s.GetRepo(ctx, r.ID)
+	if got3.Status != db.RepoStatusReady {
+		t.Errorf("UpdateRepoStatus did not persist")
+	}
+
+	// UpdateRepo
+	r.TrustedHTML = true
+	r.StaleTTLSecs = 300
+	if err := s.UpdateRepo(ctx, r); err != nil {
+		t.Fatalf("UpdateRepo: %v", err)
+	}
+	got4, _ := s.GetRepo(ctx, r.ID)
+	if !got4.TrustedHTML || got4.StaleTTLSecs != 300 {
+		t.Errorf("UpdateRepo did not persist: %+v", got4)
+	}
+
+	// DeleteRepo
+	if err := s.DeleteRepo(ctx, r.ID); err != nil {
+		t.Fatalf("DeleteRepo: %v", err)
+	}
+	_, err = s.GetRepo(ctx, r.ID)
+	if err == nil {
+		t.Fatal("expected error after DeleteRepo")
+	}
+}

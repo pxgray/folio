@@ -289,36 +289,122 @@ func (s *SQLiteStore) DeleteExpiredSessions(ctx context.Context) error {
 	return err
 }
 
+func scanRepo(row *sql.Row) (*Repo, error) {
+	var r Repo
+	var createdAt string
+	err := row.Scan(
+		&r.ID, &r.OwnerID, &r.Host, &r.RepoOwner, &r.RepoName,
+		&r.RemoteURL, &r.WebhookSecret, &r.TrustedHTML, &r.StaleTTLSecs,
+		&r.Status, &r.StatusMsg, &createdAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("repo not found: %w", err)
+	}
+	if err != nil {
+		return nil, err
+	}
+	r.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	return &r, nil
+}
+
+const repoColumns = `id, owner_id, host, repo_owner, repo_name,
+    remote_url, webhook_secret, trusted_html, stale_ttl_secs,
+    status, status_msg, created_at`
+
 func (s *SQLiteStore) CreateRepo(ctx context.Context, r *Repo) error {
-	panic("not implemented")
+	r.CreatedAt = time.Now().UTC()
+	if r.Status == "" {
+		r.Status = RepoStatusPending
+	}
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO repos (owner_id, host, repo_owner, repo_name,
+            remote_url, webhook_secret, trusted_html, stale_ttl_secs,
+            status, status_msg, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.OwnerID, r.Host, r.RepoOwner, r.RepoName,
+		r.RemoteURL, r.WebhookSecret, r.TrustedHTML, r.StaleTTLSecs,
+		r.Status, r.StatusMsg, r.CreatedAt.Format(time.RFC3339),
+	)
+	if err != nil {
+		return fmt.Errorf("CreateRepo: %w", err)
+	}
+	r.ID, err = res.LastInsertId()
+	return err
 }
 
 func (s *SQLiteStore) GetRepo(ctx context.Context, id int64) (*Repo, error) {
-	panic("not implemented")
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+repoColumns+` FROM repos WHERE id = ?`, id)
+	return scanRepo(row)
 }
 
 func (s *SQLiteStore) GetRepoByKey(ctx context.Context, host, repoOwner, repoName string) (*Repo, error) {
-	panic("not implemented")
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+repoColumns+` FROM repos WHERE host=? AND repo_owner=? AND repo_name=?`,
+		host, repoOwner, repoName)
+	return scanRepo(row)
 }
 
 func (s *SQLiteStore) ListReposByOwner(ctx context.Context, ownerID int64) ([]*Repo, error) {
-	panic("not implemented")
+	return s.listRepos(ctx, `WHERE owner_id = ?`, ownerID)
 }
 
 func (s *SQLiteStore) ListAllRepos(ctx context.Context) ([]*Repo, error) {
-	panic("not implemented")
+	return s.listRepos(ctx, ``, nil)
+}
+
+func (s *SQLiteStore) listRepos(ctx context.Context, where string, arg any) ([]*Repo, error) {
+	q := `SELECT ` + repoColumns + ` FROM repos ` + where + ` ORDER BY id`
+	var rows *sql.Rows
+	var err error
+	if arg != nil {
+		rows, err = s.db.QueryContext(ctx, q, arg)
+	} else {
+		rows, err = s.db.QueryContext(ctx, q)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var repos []*Repo
+	for rows.Next() {
+		var r Repo
+		var createdAt string
+		if err := rows.Scan(
+			&r.ID, &r.OwnerID, &r.Host, &r.RepoOwner, &r.RepoName,
+			&r.RemoteURL, &r.WebhookSecret, &r.TrustedHTML, &r.StaleTTLSecs,
+			&r.Status, &r.StatusMsg, &createdAt,
+		); err != nil {
+			return nil, err
+		}
+		r.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		repos = append(repos, &r)
+	}
+	return repos, rows.Err()
 }
 
 func (s *SQLiteStore) UpdateRepo(ctx context.Context, r *Repo) error {
-	panic("not implemented")
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE repos SET owner_id=?, host=?, repo_owner=?, repo_name=?,
+            remote_url=?, webhook_secret=?, trusted_html=?, stale_ttl_secs=?,
+            status=?, status_msg=?
+         WHERE id=?`,
+		r.OwnerID, r.Host, r.RepoOwner, r.RepoName,
+		r.RemoteURL, r.WebhookSecret, r.TrustedHTML, r.StaleTTLSecs,
+		r.Status, r.StatusMsg, r.ID,
+	)
+	return err
 }
 
 func (s *SQLiteStore) UpdateRepoStatus(ctx context.Context, id int64, status, msg string) error {
-	panic("not implemented")
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE repos SET status=?, status_msg=? WHERE id=?`, status, msg, id)
+	return err
 }
 
 func (s *SQLiteStore) DeleteRepo(ctx context.Context, id int64) error {
-	panic("not implemented")
+	_, err := s.db.ExecContext(ctx, `DELETE FROM repos WHERE id = ?`, id)
+	return err
 }
 
 func (s *SQLiteStore) GetSetting(ctx context.Context, key string) (string, error) {
