@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -105,31 +106,93 @@ func (s *SQLiteStore) migrate() error {
 	return err
 }
 
-// --- Stub implementations (to be replaced in later tasks) ---
+// --- Helper functions ---
+
+func scanUser(row *sql.Row) (*User, error) {
+	var u User
+	var pw sql.NullString
+	var createdAt string
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &pw, &u.IsAdmin, &createdAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+	if err != nil {
+		return nil, err
+	}
+	u.Password = pw.String
+	u.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	return &u, nil
+}
+
+// nullString converts an empty Go string to a SQL NULL.
+func nullString(s string) sql.NullString {
+	return sql.NullString{String: s, Valid: s != ""}
+}
+
+// --- User CRUD ---
 
 func (s *SQLiteStore) CreateUser(ctx context.Context, u *User) error {
-	panic("not implemented")
+	u.CreatedAt = time.Now().UTC()
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO users (email, name, password, is_admin, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+		u.Email, u.Name, nullString(u.Password), u.IsAdmin,
+		u.CreatedAt.Format(time.RFC3339),
+	)
+	if err != nil {
+		return fmt.Errorf("CreateUser: %w", err)
+	}
+	u.ID, err = res.LastInsertId()
+	return err
 }
 
 func (s *SQLiteStore) GetUserByID(ctx context.Context, id int64) (*User, error) {
-	panic("not implemented")
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, email, name, password, is_admin, created_at FROM users WHERE id = ?`, id)
+	return scanUser(row)
 }
 
 func (s *SQLiteStore) GetUserByEmail(ctx context.Context, email string) (*User, error) {
-	panic("not implemented")
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, email, name, password, is_admin, created_at FROM users WHERE email = ?`, email)
+	return scanUser(row)
 }
 
 func (s *SQLiteStore) UpdateUser(ctx context.Context, u *User) error {
-	panic("not implemented")
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE users SET email=?, name=?, password=?, is_admin=? WHERE id=?`,
+		u.Email, u.Name, nullString(u.Password), u.IsAdmin, u.ID)
+	return err
 }
 
 func (s *SQLiteStore) DeleteUser(ctx context.Context, id int64) error {
-	panic("not implemented")
+	_, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
+	return err
 }
 
 func (s *SQLiteStore) ListUsers(ctx context.Context) ([]*User, error) {
-	panic("not implemented")
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, email, name, password, is_admin, created_at FROM users ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var users []*User
+	for rows.Next() {
+		var u User
+		var pw sql.NullString
+		var createdAt string
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &pw, &u.IsAdmin, &createdAt); err != nil {
+			return nil, err
+		}
+		u.Password = pw.String
+		u.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		users = append(users, &u)
+	}
+	return users, rows.Err()
 }
+
+// --- Stub implementations (to be replaced in later tasks) ---
 
 func (s *SQLiteStore) CreateOAuthAccount(ctx context.Context, a *OAuthAccount) error {
 	panic("not implemented")
