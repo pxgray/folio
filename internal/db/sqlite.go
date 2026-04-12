@@ -192,8 +192,6 @@ func (s *SQLiteStore) ListUsers(ctx context.Context) ([]*User, error) {
 	return users, rows.Err()
 }
 
-// --- Stub implementations (to be replaced in later tasks) ---
-
 func (s *SQLiteStore) CreateOAuthAccount(ctx context.Context, a *OAuthAccount) error {
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO oauth_accounts (user_id, provider, provider_id) VALUES (?, ?, ?)`,
@@ -408,23 +406,70 @@ func (s *SQLiteStore) DeleteRepo(ctx context.Context, id int64) error {
 }
 
 func (s *SQLiteStore) GetSetting(ctx context.Context, key string) (string, error) {
-	panic("not implemented")
+	var value string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT value FROM server_settings WHERE key = ?`, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrSettingNotFound
+	}
+	return value, err
 }
 
 func (s *SQLiteStore) UpsertSetting(ctx context.Context, key, value string) error {
-	panic("not implemented")
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO server_settings (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		key, value)
+	return err
 }
 
 func (s *SQLiteStore) IsSetupComplete(ctx context.Context) (bool, error) {
-	panic("not implemented")
+	val, err := s.GetSetting(ctx, "setup_complete")
+	if errors.Is(err, ErrSettingNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return val == "true", nil
 }
 
 func (s *SQLiteStore) SetRepoArtifacts(ctx context.Context, repoID int64, artifacts map[string]string) error {
-	panic("not implemented")
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM repo_web_artifacts WHERE repo_id = ?`, repoID); err != nil {
+		return err
+	}
+	for name, path := range artifacts {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO repo_web_artifacts (repo_id, name, path) VALUES (?, ?, ?)`,
+			repoID, name, path); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) GetRepoArtifacts(ctx context.Context, repoID int64) (map[string]string, error) {
-	panic("not implemented")
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT name, path FROM repo_web_artifacts WHERE repo_id = ?`, repoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[string]string)
+	for rows.Next() {
+		var name, path string
+		if err := rows.Scan(&name, &path); err != nil {
+			return nil, err
+		}
+		result[name] = path
+	}
+	return result, rows.Err()
 }
 
 // Compile-time interface check.

@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -292,5 +293,71 @@ func TestRepoCRUD(t *testing.T) {
 	_, err = s.GetRepo(ctx, r.ID)
 	if err == nil {
 		t.Fatal("expected error after DeleteRepo")
+	}
+}
+
+func TestSettings(t *testing.T) {
+	ctx := context.Background()
+	s := openTestDB(t)
+
+	// GetSetting on missing key returns ErrSettingNotFound
+	_, err := s.GetSetting(ctx, "setup_complete")
+	if !errors.Is(err, db.ErrSettingNotFound) {
+		t.Fatalf("expected ErrSettingNotFound, got %v", err)
+	}
+
+	// UpsertSetting inserts
+	if err := s.UpsertSetting(ctx, "setup_complete", "false"); err != nil {
+		t.Fatalf("UpsertSetting insert: %v", err)
+	}
+	val, err := s.GetSetting(ctx, "setup_complete")
+	if err != nil || val != "false" {
+		t.Fatalf("GetSetting: err=%v val=%q", err, val)
+	}
+
+	// IsSetupComplete — false
+	done, err := s.IsSetupComplete(ctx)
+	if err != nil || done {
+		t.Fatalf("IsSetupComplete expected false, got %v / %v", done, err)
+	}
+
+	// UpsertSetting updates
+	if err := s.UpsertSetting(ctx, "setup_complete", "true"); err != nil {
+		t.Fatalf("UpsertSetting update: %v", err)
+	}
+	done2, _ := s.IsSetupComplete(ctx)
+	if !done2 {
+		t.Fatal("IsSetupComplete expected true after upsert")
+	}
+}
+
+func TestArtifacts(t *testing.T) {
+	ctx := context.Background()
+	s := openTestDB(t)
+
+	owner := &db.User{Email: "frank@example.com", Name: "Frank"}
+	_ = s.CreateUser(ctx, owner)
+	repo := &db.Repo{OwnerID: owner.ID, Host: "github.com", RepoOwner: "x", RepoName: "y"}
+	_ = s.CreateRepo(ctx, repo)
+
+	arts := map[string]string{"app": "/app", "docs": "/docs"}
+	if err := s.SetRepoArtifacts(ctx, repo.ID, arts); err != nil {
+		t.Fatalf("SetRepoArtifacts: %v", err)
+	}
+
+	got, err := s.GetRepoArtifacts(ctx, repo.ID)
+	if err != nil {
+		t.Fatalf("GetRepoArtifacts: %v", err)
+	}
+	if got["app"] != "/app" || got["docs"] != "/docs" {
+		t.Errorf("unexpected artifacts: %v", got)
+	}
+
+	// Replace artifacts (SetRepoArtifacts is replace-all)
+	arts2 := map[string]string{"new": "/new"}
+	_ = s.SetRepoArtifacts(ctx, repo.ID, arts2)
+	got2, _ := s.GetRepoArtifacts(ctx, repo.ID)
+	if len(got2) != 1 || got2["new"] != "/new" {
+		t.Errorf("expected replace-all, got: %v", got2)
 	}
 }
