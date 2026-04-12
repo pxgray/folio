@@ -195,19 +195,48 @@ func (s *SQLiteStore) ListUsers(ctx context.Context) ([]*User, error) {
 // --- Stub implementations (to be replaced in later tasks) ---
 
 func (s *SQLiteStore) CreateOAuthAccount(ctx context.Context, a *OAuthAccount) error {
-	panic("not implemented")
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO oauth_accounts (user_id, provider, provider_id) VALUES (?, ?, ?)`,
+		a.UserID, a.Provider, a.ProviderID)
+	if err != nil {
+		return fmt.Errorf("CreateOAuthAccount: %w", err)
+	}
+	a.ID, err = res.LastInsertId()
+	return err
 }
 
 func (s *SQLiteStore) GetUserByOAuth(ctx context.Context, provider, providerID string) (*User, error) {
-	panic("not implemented")
+	row := s.db.QueryRowContext(ctx,
+		`SELECT u.id, u.email, u.name, u.password, u.is_admin, u.created_at
+         FROM users u
+         JOIN oauth_accounts o ON o.user_id = u.id
+         WHERE o.provider = ? AND o.provider_id = ?`,
+		provider, providerID)
+	return scanUser(row)
 }
 
 func (s *SQLiteStore) DeleteOAuthAccount(ctx context.Context, userID int64, provider string) error {
-	panic("not implemented")
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM oauth_accounts WHERE user_id = ? AND provider = ?`, userID, provider)
+	return err
 }
 
 func (s *SQLiteStore) ListOAuthAccounts(ctx context.Context, userID int64) ([]*OAuthAccount, error) {
-	panic("not implemented")
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, user_id, provider, provider_id FROM oauth_accounts WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var accounts []*OAuthAccount
+	for rows.Next() {
+		var a OAuthAccount
+		if err := rows.Scan(&a.ID, &a.UserID, &a.Provider, &a.ProviderID); err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, &a)
+	}
+	return accounts, rows.Err()
 }
 
 func (s *SQLiteStore) CreateSession(ctx context.Context, sess *Session) error {

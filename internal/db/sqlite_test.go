@@ -84,3 +84,46 @@ func TestUserCRUD(t *testing.T) {
 		t.Fatal("expected error after DeleteUser, got nil")
 	}
 }
+
+func TestOAuthAccountCRUD(t *testing.T) {
+	ctx := context.Background()
+	s := openTestDB(t)
+
+	u := &db.User{Email: "carol@example.com", Name: "Carol"}
+	_ = s.CreateUser(ctx, u)
+
+	a := &db.OAuthAccount{UserID: u.ID, Provider: "github", ProviderID: "gh-123"}
+	if err := s.CreateOAuthAccount(ctx, a); err != nil {
+		t.Fatalf("CreateOAuthAccount: %v", err)
+	}
+	if a.ID == 0 {
+		t.Fatal("expected ID to be set")
+	}
+
+	// GetUserByOAuth
+	got, err := s.GetUserByOAuth(ctx, "github", "gh-123")
+	if err != nil {
+		t.Fatalf("GetUserByOAuth: %v", err)
+	}
+	if got.ID != u.ID {
+		t.Errorf("GetUserByOAuth returned wrong user")
+	}
+
+	// ListOAuthAccounts
+	accounts, err := s.ListOAuthAccounts(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("ListOAuthAccounts: %v", err)
+	}
+	if len(accounts) != 1 || accounts[0].Provider != "github" {
+		t.Errorf("unexpected accounts: %v", accounts)
+	}
+
+	// DeleteOAuthAccount
+	if err := s.DeleteOAuthAccount(ctx, u.ID, "github"); err != nil {
+		t.Fatalf("DeleteOAuthAccount: %v", err)
+	}
+	accounts2, _ := s.ListOAuthAccounts(ctx, u.ID)
+	if len(accounts2) != 0 {
+		t.Errorf("expected 0 accounts after delete, got %d", len(accounts2))
+	}
+}
