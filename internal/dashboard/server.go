@@ -23,6 +23,7 @@ type Server struct {
 	setupComplete bool
 
 	setupTmpl *template.Template
+	loginTmpl *template.Template
 	// additional templates added in later phases
 }
 
@@ -47,6 +48,9 @@ func New(
 	s.setupTmpl = template.Must(
 		template.ParseFS(tmplFS, "templates/setup.html"),
 	)
+	s.loginTmpl = template.Must(
+		template.ParseFS(tmplFS, "templates/login.html"),
+	)
 	return s
 }
 
@@ -58,7 +62,8 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/", s.handleSetupGet)
 		r.Post("/", s.handleSetupPost)
 	})
-	// /-/auth, /-/dashboard, /-/api routes are added in later phases
+	r.Get("/-/auth/login", s.handleLoginGet)
+	// /-/dashboard, /-/api routes are added in later phases
 	return r
 }
 
