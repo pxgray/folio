@@ -2,6 +2,7 @@ package gitstore_test
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -123,4 +124,38 @@ func TestRemoveRepo_RemovesKey(t *testing.T) {
 	if !errors.Is(err, gitstore.ErrNotRegistered) {
 		t.Errorf("expected ErrNotRegistered after RemoveRepo, got %v", err)
 	}
+}
+
+func TestStore_ConcurrentAddRemoveGet(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	s := gitstore.New(t.TempDir(), 5*time.Minute)
+
+	// Pre-populate via clone path (clone does NOT start a background fetch goroutine).
+	if err := s.AddRepo(t.Context(), gitstore.RepoEntry{
+		Host: "example.com", Owner: "u", Name: "r",
+		RemoteURL: "file://" + bareDir,
+	}); err != nil {
+		t.Fatalf("AddRepo: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			_, _ = s.Get("example.com", "u", "r")
+		}
+	}()
+
+	for i := 0; i < 50; i++ {
+		s.RemoveRepo("example.com", "u", "r")
+		// Use a unique name each iteration so AddRepo takes the clone path
+		// (not the open+background-fetch path), avoiding goroutines that would
+		// outlive the test and race with TempDir cleanup.
+		_ = s.AddRepo(t.Context(), gitstore.RepoEntry{
+			Host: "example.com", Owner: "u", Name: fmt.Sprintf("r%d", i),
+			RemoteURL: "file://" + bareDir,
+		})
+	}
+
+	<-done
 }
