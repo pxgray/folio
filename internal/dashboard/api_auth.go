@@ -84,3 +84,27 @@ func (s *Server) handleAPIMe(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	writeJSON(w, http.StatusOK, userResponse(user))
 }
+
+// handleAPILogout clears the session cookie and deletes the session from the database.
+//
+// POST /-/api/v1/auth/logout
+func (s *Server) handleAPILogout(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Read the session cookie. If absent, still return 200.
+	cookie, err := r.Cookie("session")
+	if err == nil && cookie.Value != "" {
+		// Delete session from database.
+		s.dbStore.DeleteSession(ctx, cookie.Value)
+	}
+
+	// Clear the session cookie.
+	http.SetCookie(w, &http.Cookie{
+		Name:   "session",
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}

@@ -157,3 +157,38 @@ func TestAPIMeWithoutSession(t *testing.T) {
 		t.Fatalf("want 401, got %d", resp.StatusCode)
 	}
 }
+
+func TestAPILogoutClearsCookie(t *testing.T) {
+	ts, store, user := newAPITestServer(t)
+
+	ctx := context.Background()
+	authn := auth.New(store)
+	sess, err := authn.NewSession(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/-/api/v1/auth/logout", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.AddCookie(&http.Cookie{Name: "session", Value: sess.Token})
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /logout: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	setCookie := resp.Header.Get("Set-Cookie")
+	if !strings.Contains(setCookie, "session=") {
+		t.Errorf("expected Set-Cookie to contain 'session=', got %q", setCookie)
+	}
+	if !strings.Contains(setCookie, "Max-Age=0") && !strings.Contains(setCookie, "Max-Age=-1") {
+		t.Errorf("expected Set-Cookie to contain Max-Age=0 or Max-Age=-1, got %q", setCookie)
+	}
+}
