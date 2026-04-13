@@ -89,6 +89,9 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/repos/{id}", s.handleRepoUpdate)
 		r.Post("/repos/{id}/delete", s.handleRepoDelete)
 		r.Post("/repos/{id}/sync", s.handleRepoSync)
+		r.Get("/settings", s.handleSettingsGet)
+		r.Post("/settings", s.handleSettingsPost)
+		r.Post("/settings/unlink/{provider}", s.handleOAuthUnlink)
 	})
 	return r
 }

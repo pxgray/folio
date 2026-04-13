@@ -1,0 +1,57 @@
+{{define "content"}}
+<div class="dashboard-page">
+  <h1>Account Settings</h1>
+
+  {{if .Flash}}<div class="flash flash-success">{{.Flash}}</div>{{end}}
+  {{if .Error}}<div class="flash flash-error">{{.Error}}</div>{{end}}
+
+  <section>
+    <h2>Profile</h2>
+    <form method="post" action="/-/dashboard/settings">
+      <label>Display Name
+        <input type="text" name="display_name" value="{{.User.Name}}">
+      </label>
+      <button type="submit" class="btn btn-primary">Save Name</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Change Password</h2>
+    <form method="post" action="/-/dashboard/settings">
+      <label>Current Password
+        <input type="password" name="current_password" autocomplete="current-password">
+      </label>
+      <label>New Password
+        <input type="password" name="new_password" autocomplete="new-password">
+      </label>
+      <button type="submit" class="btn btn-primary">Change Password</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Linked Accounts</h2>
+
+    <div class="oauth-row">
+      <span>GitHub</span>
+      {{if has .LinkedOAuth "github"}}
+      <form method="post" action="/-/dashboard/settings/unlink/github" style="display:inline">
+        <button type="submit" class="btn">Unlink</button>
+      </form>
+      {{else}}
+      <a href="/-/auth/github" class="btn">Link GitHub</a>
+      {{end}}
+    </div>
+
+    <div class="oauth-row">
+      <span>Google</span>
+      {{if has .LinkedOAuth "google"}}
+      <form method="post" action="/-/dashboard/settings/unlink/google" style="display:inline">
+        <button type="submit" class="btn">Unlink</button>
+      </form>
+      {{else}}
+      <a href="/-/auth/google" class="btn">Link Google</a>
+      {{end}}
+    </div>
+  </section>
+</div>
+{{end}}
