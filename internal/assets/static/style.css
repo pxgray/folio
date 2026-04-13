@@ -352,3 +352,9 @@ footer { text-align: center; font-size: 0.8rem; color: var(--pico-muted-color); 
 }
 .repo-list-items li a:hover { text-decoration: underline; }
 .empty { color: var(--pico-muted-color); font-style: italic; }
+
+/* ── Dashboard badge ── */
+.badge { display: inline-block; padding: 0.15em 0.5em; border-radius: 3px; font-size: 0.85em; }
+.badge-pending_clone { background: #fef3c7; color: #92400e; }
+.badge-ready { background: #d1fae5; color: #065f46; }
+.badge-error { background: #fee2e2; color: #991b1b; }

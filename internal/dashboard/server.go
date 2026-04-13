@@ -80,6 +80,10 @@ func (s *Server) Handler() http.Handler {
 		r.Delete("/{id}", s.handleAPIDeleteRepo)
 		r.Post("/{id}/sync", s.handleAPIRepoSync)
 	})
+	r.Route("/-/dashboard", func(r chi.Router) {
+		r.Use(auth.RequireAuth(s.authn))
+		r.Get("/", s.handleRepoList)
+	})
 	return r
 }
 
