@@ -4,6 +4,7 @@ import (
 	"embed"
 	"html/template"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/pxgray/folio/internal/auth"
@@ -59,4 +60,25 @@ func (s *Server) Handler() http.Handler {
 	})
 	// /-/auth, /-/dashboard, /-/api routes are added in later phases
 	return r
+}
+
+// setFlash stores a one-time flash message in a short-lived cookie.
+func setFlash(w http.ResponseWriter, msg string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:   "_flash",
+		Value:  url.QueryEscape(msg),
+		Path:   "/",
+		MaxAge: 60,
+	})
+}
+
+// getFlash reads and clears the flash cookie, returning the message (or "").
+func getFlash(w http.ResponseWriter, r *http.Request) string {
+	c, err := r.Cookie("_flash")
+	if err != nil {
+		return ""
+	}
+	http.SetCookie(w, &http.Cookie{Name: "_flash", Value: "", Path: "/", MaxAge: -1})
+	v, _ := url.QueryUnescape(c.Value)
+	return v
 }
