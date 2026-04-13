@@ -9,13 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	gitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	_ "github.com/go-git/go-git/v5/plumbing/transport/file" // register file:// transport
 	"github.com/pxgray/folio/internal/assets"
-	"github.com/pxgray/folio/internal/config"
+	"github.com/pxgray/folio/internal/db"
 	"github.com/pxgray/folio/internal/gitstore"
 	"github.com/pxgray/folio/internal/web"
 )
@@ -65,24 +66,28 @@ func writeTestFile(t *testing.T, path, content string) {
 // repoName is the routing label used in URLs (e.g. "testrepo").
 func makeTestServerForRepo(t *testing.T, bareDir, repoName string) *httptest.Server {
 	t.Helper()
-	cfg := &config.Config{
-		Server: config.ServerConfig{Addr: ":0"},
-		Cache:  config.CacheConfig{Dir: t.TempDir()},
-		Repos: []config.RepoConfig{
-			{
-				Host:   "example.com",
-				Owner:  "testuser",
-				Repo:   repoName,
-				Remote: "file://" + bareDir,
-			},
+	ctx := t.Context()
+
+	gitStore := gitstore.New(t.TempDir(), 5*time.Minute)
+	err := gitStore.EnsureRepos(ctx, []gitstore.RepoEntry{
+		{
+			Host:      "example.com",
+			Owner:     "testuser",
+			Name:      repoName,
+			RemoteURL: "file://" + bareDir,
 		},
+	})
+	if err != nil {
+		t.Fatalf("EnsureRepos: %v", err)
 	}
-	store := gitstore.New(cfg)
-	if err := store.EnsureCloned(t.Context()); err != nil {
-		t.Fatalf("EnsureCloned: %v", err)
+
+	dbStore, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
 	}
+
 	staticFS, _ := fs.Sub(assets.StaticFS, "static")
-	srv, err := web.New(cfg, store, assets.TemplateFS, staticFS)
+	srv, err := web.New(dbStore, gitStore, assets.TemplateFS, staticFS)
 	if err != nil {
 		t.Fatalf("web.New: %v", err)
 	}
@@ -301,21 +306,20 @@ func makeTestLocalDir(t *testing.T) string {
 func makeTestServerWithLocal(t *testing.T, localDir string) *httptest.Server {
 	t.Helper()
 
-	cfg := &config.Config{
-		Server: config.ServerConfig{Addr: ":0"},
-		Cache:  config.CacheConfig{Dir: t.TempDir()},
-		Locals: []config.LocalConfig{
-			{Label: "testlocal", Path: localDir},
-		},
-	}
-
-	store := gitstore.New(cfg)
-	if err := store.OpenLocals(); err != nil {
+	gitStore := gitstore.New(t.TempDir(), 5*time.Minute)
+	if err := gitStore.OpenLocals([]gitstore.LocalEntry{
+		{Label: "testlocal", Path: localDir},
+	}); err != nil {
 		t.Fatalf("OpenLocals: %v", err)
 	}
 
+	dbStore, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+
 	staticFS, _ := fs.Sub(assets.StaticFS, "static")
-	srv, err := web.New(cfg, store, assets.TemplateFS, staticFS)
+	srv, err := web.New(dbStore, gitStore, assets.TemplateFS, staticFS)
 	if err != nil {
 		t.Fatalf("web.New: %v", err)
 	}
@@ -491,22 +495,23 @@ func TestHandleDoc_XSSStripped_Untrusted(t *testing.T) {
 		t.Fatalf("push: %v", err)
 	}
 
-	cacheDir := t.TempDir()
-	cfg := &config.Config{
-		Server: config.ServerConfig{Addr: ":0"},
-		Cache:  config.CacheConfig{Dir: cacheDir},
-		Repos: []config.RepoConfig{{
-			Host: "example.com", Owner: "testuser", Repo: "xssrepo",
-			Remote: "file://" + bareDir,
-			// TrustedHTML omitted → defaults to false
-		}},
+	gitStore := gitstore.New(t.TempDir(), 5*time.Minute)
+	err = gitStore.EnsureRepos(t.Context(), []gitstore.RepoEntry{
+		{Host: "example.com", Owner: "testuser", Name: "xssrepo",
+			RemoteURL: "file://" + bareDir},
+	})
+	if err != nil {
+		t.Fatalf("EnsureRepos: %v", err)
 	}
-	store := gitstore.New(cfg)
-	if err := store.EnsureCloned(t.Context()); err != nil {
-		t.Fatalf("EnsureCloned: %v", err)
+
+	dbStore, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
 	}
+	// No TrustedHTML row inserted → defaults to false.
+
 	staticFS, _ := fs.Sub(assets.StaticFS, "static")
-	srv, err := web.New(cfg, store, assets.TemplateFS, staticFS)
+	srv, err := web.New(dbStore, gitStore, assets.TemplateFS, staticFS)
 	if err != nil {
 		t.Fatalf("web.New: %v", err)
 	}
