@@ -2,6 +2,7 @@ package dashboard_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -252,6 +253,258 @@ func TestDashboardRepoNew_POST_Valid(t *testing.T) {
 	r := repos[0]
 	if r.Host != "github.com" || r.RepoOwner != "acme" || r.RepoName != "docs" {
 		t.Errorf("unexpected repo fields: %+v", r)
+	}
+}
+
+func TestDashboardRepoEdit_GET(t *testing.T) {
+	ts, store, user := newDashboardTestServer(t)
+	ctx := context.Background()
+
+	repo := &db.Repo{
+		OwnerID:   user.ID,
+		Host:      "github.com",
+		RepoOwner: "acme",
+		RepoName:  "docs",
+		Status:    db.RepoStatusReady,
+	}
+	if err := store.CreateRepo(ctx, repo); err != nil {
+		t.Fatalf("CreateRepo: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet,
+		fmt.Sprintf("%s/-/dashboard/repos/%d", ts.URL, repo.ID), nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.AddCookie(newSessionCookie(t, store, user.ID))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /-/dashboard/repos/{id}: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("want 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	for _, want := range []string{"github.com", "acme", "docs", "/-/webhook"} {
+		if !strings.Contains(bodyStr, want) {
+			t.Errorf("expected body to contain %q, got:\n%s", want, bodyStr)
+		}
+	}
+}
+
+func TestDashboardRepoEdit_GET_WrongOwner(t *testing.T) {
+	ts, store, _ := newDashboardTestServer(t)
+	ctx := context.Background()
+
+	// Create a second user.
+	hash, err := auth.HashPassword("pass2")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	owner := &db.User{Email: "owner@example.com", Password: hash, Name: "Owner"}
+	if err := store.CreateUser(ctx, owner); err != nil {
+		t.Fatalf("CreateUser owner: %v", err)
+	}
+
+	repo := &db.Repo{
+		OwnerID:   owner.ID,
+		Host:      "github.com",
+		RepoOwner: "acme",
+		RepoName:  "private",
+		Status:    db.RepoStatusReady,
+	}
+	if err := store.CreateRepo(ctx, repo); err != nil {
+		t.Fatalf("CreateRepo: %v", err)
+	}
+
+	// Create a different (non-admin) user and try to access the repo.
+	hash2, err := auth.HashPassword("pass3")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	other := &db.User{Email: "other@example.com", Password: hash2, Name: "Other"}
+	if err := store.CreateUser(ctx, other); err != nil {
+		t.Fatalf("CreateUser other: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet,
+		fmt.Sprintf("%s/-/dashboard/repos/%d", ts.URL, repo.ID), nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.AddCookie(newSessionCookie(t, store, other.ID))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /-/dashboard/repos/{id}: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusForbidden {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("want 403, got %d: %s", resp.StatusCode, body)
+	}
+}
+
+func TestDashboardRepoEdit_POST_Valid(t *testing.T) {
+	ts, store, user := newDashboardTestServer(t)
+	ctx := context.Background()
+
+	repo := &db.Repo{
+		OwnerID:   user.ID,
+		Host:      "github.com",
+		RepoOwner: "acme",
+		RepoName:  "docs",
+		Status:    db.RepoStatusReady,
+	}
+	if err := store.CreateRepo(ctx, repo); err != nil {
+		t.Fatalf("CreateRepo: %v", err)
+	}
+
+	form := url.Values{
+		"host":      {"gitlab.com"},
+		"owner":     {"corp"},
+		"repo_name": {"wiki"},
+	}
+
+	req, err := http.NewRequest(http.MethodPost,
+		fmt.Sprintf("%s/-/dashboard/repos/%d", ts.URL, repo.ID),
+		strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(newSessionCookie(t, store, user.ID))
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST /-/dashboard/repos/{id}: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusSeeOther {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("want 303, got %d: %s", resp.StatusCode, body)
+	}
+	loc := resp.Header.Get("Location")
+	if loc != "/-/dashboard/" {
+		t.Errorf("want redirect to /-/dashboard/, got %q", loc)
+	}
+
+	// Verify DB was updated.
+	updated, err := store.GetRepo(ctx, repo.ID)
+	if err != nil {
+		t.Fatalf("GetRepo: %v", err)
+	}
+	if updated.Host != "gitlab.com" || updated.RepoOwner != "corp" || updated.RepoName != "wiki" {
+		t.Errorf("unexpected updated repo fields: %+v", updated)
+	}
+}
+
+func TestDashboardRepoDelete(t *testing.T) {
+	ts, store, user := newDashboardTestServer(t)
+	ctx := context.Background()
+
+	repo := &db.Repo{
+		OwnerID:   user.ID,
+		Host:      "github.com",
+		RepoOwner: "acme",
+		RepoName:  "todelete",
+		Status:    db.RepoStatusReady,
+	}
+	if err := store.CreateRepo(ctx, repo); err != nil {
+		t.Fatalf("CreateRepo: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost,
+		fmt.Sprintf("%s/-/dashboard/repos/%d/delete", ts.URL, repo.ID), nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.AddCookie(newSessionCookie(t, store, user.ID))
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST /-/dashboard/repos/{id}/delete: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusSeeOther {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("want 303, got %d: %s", resp.StatusCode, body)
+	}
+	loc := resp.Header.Get("Location")
+	if loc != "/-/dashboard/" {
+		t.Errorf("want redirect to /-/dashboard/, got %q", loc)
+	}
+
+	// Verify repo is gone from DB.
+	repos, err := store.ListReposByOwner(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("ListReposByOwner: %v", err)
+	}
+	if len(repos) != 0 {
+		t.Errorf("expected 0 repos after delete, got %d", len(repos))
+	}
+}
+
+func TestDashboardRepoSync(t *testing.T) {
+	ts, store, user := newDashboardTestServer(t)
+	ctx := context.Background()
+
+	repo := &db.Repo{
+		OwnerID:   user.ID,
+		Host:      "github.com",
+		RepoOwner: "acme",
+		RepoName:  "docs",
+		Status:    db.RepoStatusReady,
+	}
+	if err := store.CreateRepo(ctx, repo); err != nil {
+		t.Fatalf("CreateRepo: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost,
+		fmt.Sprintf("%s/-/dashboard/repos/%d/sync", ts.URL, repo.ID), nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.AddCookie(newSessionCookie(t, store, user.ID))
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST /-/dashboard/repos/{id}/sync: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusSeeOther {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("want 303, got %d: %s", resp.StatusCode, body)
+	}
+	wantLoc := fmt.Sprintf("/-/dashboard/repos/%d", repo.ID)
+	loc := resp.Header.Get("Location")
+	if loc != wantLoc {
+		t.Errorf("want redirect to %q, got %q", wantLoc, loc)
 	}
 }
 

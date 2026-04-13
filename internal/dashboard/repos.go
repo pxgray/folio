@@ -2,12 +2,15 @@ package dashboard
 
 import (
 	"context"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/pxgray/folio/internal/auth"
 	"github.com/pxgray/folio/internal/db"
 	"github.com/pxgray/folio/internal/gitstore"
@@ -120,6 +123,136 @@ func (s *Server) handleRepoCreate(w http.ResponseWriter, r *http.Request) {
 
 	setFlash(w, "Repo added — cloning in background.")
 	http.Redirect(w, r, "/-/dashboard/", http.StatusSeeOther)
+}
+
+func mustParseID(s string) int64 {
+	id, _ := strconv.ParseInt(s, 10, 64)
+	return id
+}
+
+func (s *Server) handleRepoEdit(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	id := mustParseID(chi.URLParam(r, "id"))
+	repo, err := s.dbStore.GetRepo(r.Context(), id)
+	if err != nil || id == 0 {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if repo.OwnerID != user.ID && !user.IsAdmin {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	webhookURL := fmt.Sprintf("/%s/%s/%s/-/webhook", repo.Host, repo.RepoOwner, repo.RepoName)
+	s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
+		Title:      "Edit Repo",
+		Flash:      getFlash(w, r),
+		IsAdmin:    user.IsAdmin,
+		User:       user,
+		Repo:       repo,
+		WebhookURL: webhookURL,
+	})
+}
+
+func (s *Server) handleRepoUpdate(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	id := mustParseID(chi.URLParam(r, "id"))
+	repo, err := s.dbStore.GetRepo(r.Context(), id)
+	if err != nil || id == 0 {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if repo.OwnerID != user.ID && !user.IsAdmin {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	host := strings.TrimSpace(r.FormValue("host"))
+	owner := strings.TrimSpace(r.FormValue("owner"))
+	repoName := strings.TrimSpace(r.FormValue("repo_name"))
+	if host == "" || owner == "" || repoName == "" {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
+			Title:   "Edit Repo",
+			IsAdmin: user.IsAdmin,
+			User:    user,
+			Repo:    repo,
+			Error:   "Host, Owner, and Repo Name are required.",
+		})
+		return
+	}
+	repo.Host = host
+	repo.RepoOwner = owner
+	repo.RepoName = repoName
+	repo.RemoteURL = strings.TrimSpace(r.FormValue("remote_url"))
+	repo.WebhookSecret = strings.TrimSpace(r.FormValue("webhook_secret"))
+	repo.TrustedHTML = r.FormValue("trusted_html") == "on"
+	if err := s.dbStore.UpdateRepo(r.Context(), repo); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
+			Title:   "Edit Repo",
+			IsAdmin: user.IsAdmin,
+			User:    user,
+			Repo:    repo,
+			Error:   "Save failed: " + err.Error(),
+		})
+		return
+	}
+	setFlash(w, "Repo updated.")
+	http.Redirect(w, r, "/-/dashboard/", http.StatusSeeOther)
+}
+
+func (s *Server) handleRepoDelete(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	id := mustParseID(chi.URLParam(r, "id"))
+	repo, err := s.dbStore.GetRepo(r.Context(), id)
+	if err != nil || id == 0 {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if repo.OwnerID != user.ID && !user.IsAdmin {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if s.gitStore != nil {
+		s.gitStore.RemoveRepo(repo.Host, repo.RepoOwner, repo.RepoName)
+	}
+	if err := s.dbStore.DeleteRepo(r.Context(), id); err != nil {
+		http.Error(w, "delete failed", http.StatusInternalServerError)
+		return
+	}
+	setFlash(w, "Repo deleted.")
+	http.Redirect(w, r, "/-/dashboard/", http.StatusSeeOther)
+}
+
+func (s *Server) handleRepoSync(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	id := mustParseID(chi.URLParam(r, "id"))
+	repo, err := s.dbStore.GetRepo(r.Context(), id)
+	if err != nil || id == 0 {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if repo.OwnerID != user.ID && !user.IsAdmin {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if s.gitStore != nil {
+		go func() {
+			gitRepo, err := s.gitStore.Get(repo.Host, repo.RepoOwner, repo.RepoName)
+			if err != nil {
+				log.Printf("sync: repo not registered %s/%s/%s: %v", repo.Host, repo.RepoOwner, repo.RepoName, err)
+				return
+			}
+			if err := gitRepo.FetchNow(context.Background()); err != nil {
+				log.Printf("sync failed for %s/%s/%s: %v", repo.Host, repo.RepoOwner, repo.RepoName, err)
+			}
+		}()
+	}
+	setFlash(w, "Sync triggered.")
+	http.Redirect(w, r, fmt.Sprintf("/-/dashboard/repos/%d", id), http.StatusSeeOther)
 }
 
 func (s *Server) renderTemplate(w http.ResponseWriter, name string, data any) {

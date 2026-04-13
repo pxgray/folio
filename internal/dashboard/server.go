@@ -85,6 +85,10 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/", s.handleRepoList)
 		r.Get("/repos/new", s.handleRepoNew)
 		r.Post("/repos/new", s.handleRepoCreate)
+		r.Get("/repos/{id}", s.handleRepoEdit)
+		r.Post("/repos/{id}", s.handleRepoUpdate)
+		r.Post("/repos/{id}/delete", s.handleRepoDelete)
+		r.Post("/repos/{id}/sync", s.handleRepoSync)
 	})
 	return r
 }
