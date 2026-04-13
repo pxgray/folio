@@ -1,9 +1,12 @@
 package gitstore
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -50,6 +53,61 @@ type LocalEntry struct {
 	Label       string
 	Path        string
 	TrustedHTML bool
+}
+
+// AddRepo registers a repo; clones if not on disk, opens if already cloned.
+// No-op (returns nil) if the key is already registered. Thread-safe.
+func (s *Store) AddRepo(ctx context.Context, e RepoEntry) error {
+	key := e.key()
+
+	s.mu.RLock()
+	_, exists := s.repos[key]
+	s.mu.RUnlock()
+	if exists {
+		return nil
+	}
+
+	staleTTL := e.StaleTTL
+	if staleTTL == 0 {
+		staleTTL = s.defaultStaleTTL
+	}
+
+	localDir := filepath.Join(s.cacheDir, e.Host, e.Owner, e.Name)
+	repo := newRepo(e.cloneURL(), localDir, staleTTL)
+
+	if _, err := os.Stat(localDir); errors.Is(err, os.ErrNotExist) {
+		log.Printf("folio: cloning %s into %s", e.cloneURL(), localDir)
+		if err := os.MkdirAll(filepath.Dir(localDir), 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", filepath.Dir(localDir), err)
+		}
+		if err := repo.clone(ctx); err != nil {
+			return fmt.Errorf("clone %s: %w", key, err)
+		}
+		log.Printf("folio: cloned %s", key)
+	} else {
+		log.Printf("folio: opening %s from %s", key, localDir)
+		if err := repo.open(); err != nil {
+			return fmt.Errorf("open %s: %w", key, err)
+		}
+		go repo.triggerBackgroundFetch(context.Background())
+	}
+
+	s.mu.Lock()
+	s.repos[key] = repo
+	s.mu.Unlock()
+	return nil
+}
+
+// RepoEntries returns a snapshot of all registered remote repo entries.
+// Intended for testing and diagnostics.
+func (s *Store) RepoEntries() []RepoEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]RepoEntry, 0, len(s.repos))
+	for range s.repos {
+		out = append(out, RepoEntry{})
+	}
+	return out
 }
 
 // Get returns the Repository for the given host/owner/repo triple.

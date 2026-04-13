@@ -55,3 +55,49 @@ func TestNew_EmptyStore(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
+
+func TestAddRepo_RegistersKey(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	s := gitstore.New(t.TempDir(), 5*time.Minute)
+
+	err := s.AddRepo(t.Context(), gitstore.RepoEntry{
+		Host:      "example.com",
+		Owner:     "testuser",
+		Name:      "docs",
+		RemoteURL: "file://" + bareDir,
+	})
+	if err != nil {
+		t.Fatalf("AddRepo: %v", err)
+	}
+
+	repo, err := s.Get("example.com", "testuser", "docs")
+	if err != nil {
+		t.Fatalf("Get after AddRepo: %v", err)
+	}
+	if repo == nil {
+		t.Fatal("expected non-nil repo")
+	}
+}
+
+func TestAddRepo_NoOpOnDuplicate(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	s := gitstore.New(t.TempDir(), 5*time.Minute)
+	entry := gitstore.RepoEntry{
+		Host: "example.com", Owner: "testuser", Name: "docs",
+		RemoteURL: "file://" + bareDir,
+	}
+
+	if err := s.AddRepo(t.Context(), entry); err != nil {
+		t.Fatalf("first AddRepo: %v", err)
+	}
+	// Second call must be a no-op — no error, no panic.
+	if err := s.AddRepo(t.Context(), entry); err != nil {
+		t.Fatalf("second AddRepo (no-op): %v", err)
+	}
+
+	// Still exactly one registration.
+	repos := s.RepoEntries()
+	if len(repos) != 1 {
+		t.Errorf("expected 1 repo, got %d", len(repos))
+	}
+}
