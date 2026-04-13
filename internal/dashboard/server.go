@@ -63,7 +63,8 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/", s.handleSetupPost)
 	})
 	r.Get("/-/auth/login", s.handleLoginGet)
-	// /-/dashboard, /-/api routes are added in later phases
+	r.Post("/-/api/v1/auth/login", s.handleAPILogin)
+	r.Get("/-/api/v1/auth/me", auth.RequireAuth(s.authn)(http.HandlerFunc(s.handleAPIMe)).ServeHTTP)
 	return r
 }
 
