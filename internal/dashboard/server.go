@@ -75,6 +75,10 @@ func (s *Server) Handler() http.Handler {
 		r.Use(auth.RequireAuth(s.authn))
 		r.Get("/", s.handleAPIListRepos)
 		r.Post("/", s.handleAPICreateRepo)
+		r.Get("/{id}", s.handleAPIGetRepo)
+		r.Patch("/{id}", s.handleAPIUpdateRepo)
+		r.Delete("/{id}", s.handleAPIDeleteRepo)
+		r.Post("/{id}/sync", s.handleAPIRepoSync)
 	})
 	return r
 }
