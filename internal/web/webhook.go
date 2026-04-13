@@ -42,7 +42,9 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	// Verify HMAC if a secret is configured for this repo.
 	key := host + "/" + owner + "/" + repo
+	s.mu.RLock()
 	secret := s.repoSecrets[key]
+	s.mu.RUnlock()
 	if secret != "" {
 		sig := r.Header.Get("X-Hub-Signature-256")
 		if !verifyGitHubSignature(secret, body, sig) {

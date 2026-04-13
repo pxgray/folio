@@ -41,7 +41,9 @@ func (s *Server) handleRepoArtifact(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := host + "/" + owner + "/" + repo
+	s.mu.RLock()
 	repoCfg := s.repoArtifactConfig[key]
+	s.mu.RUnlock()
 
 	gitPath := s.resolveArtifactPath(repoCfg, name)
 	if gitPath == "" {

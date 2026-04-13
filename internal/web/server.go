@@ -86,6 +86,32 @@ func New(dbStore db.Store, gitStore *gitstore.Store, tmplFS embed.FS, staticFS f
 	}, nil
 }
 
+// Reload re-queries dbStore for all repos and atomically updates the cached maps.
+// Safe to call concurrently with in-flight requests.
+func (s *Server) Reload(ctx context.Context) error {
+	allRepos, err := s.dbStore.ListAllRepos(ctx)
+	if err != nil {
+		return fmt.Errorf("Reload: list repos: %w", err)
+	}
+
+	repoTrusted := make(map[string]bool, len(allRepos))
+	repoSecrets := make(map[string]string, len(allRepos))
+	repoArtifacts := make(map[string]repoArtifactConfig, len(allRepos))
+	for _, r := range allRepos {
+		key := r.Host + "/" + r.RepoOwner + "/" + r.RepoName
+		repoTrusted[key] = r.TrustedHTML
+		repoSecrets[key] = r.WebhookSecret
+		repoArtifacts[key] = repoArtifactConfig{artifacts: nil}
+	}
+
+	s.mu.Lock()
+	s.repoTrusted = repoTrusted
+	s.repoSecrets = repoSecrets
+	s.repoArtifactConfig = repoArtifacts
+	s.mu.Unlock()
+	return nil
+}
+
 // Handler returns the http.Handler with all routes registered.
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
