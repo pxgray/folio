@@ -1,5 +1,53 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>Folio Setup</title></head>
-<body><h1>Setup</h1></body>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Folio Setup</title>
+  <link rel="stylesheet" href="/-/static/pico.min.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Folio Setup</h1>
+    <p>Configure your Folio instance and create the first admin account.</p>
+
+    {{if .Error}}
+    <article role="alert">{{.Error}}</article>
+    {{end}}
+
+    <form method="POST" action="/-/setup">
+      <fieldset>
+        <legend>Admin account</legend>
+        <label for="name">
+          Name <span aria-hidden="true">*</span>
+          <input type="text" id="name" name="name" value="{{.Name}}" required placeholder="Alice Admin">
+        </label>
+        <label for="email">
+          Email <span aria-hidden="true">*</span>
+          <input type="email" id="email" name="email" value="{{.Email}}" required placeholder="alice@example.com">
+        </label>
+        <label for="password">
+          Password <span aria-hidden="true">*</span>
+          <input type="password" id="password" name="password" required placeholder="minimum 8 characters">
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Server</legend>
+        <label for="addr">
+          Listen address
+          <input type="text" id="addr" name="addr" value="{{.Addr}}" placeholder=":8080">
+          <small>e.g. :8080 or 127.0.0.1:8080</small>
+        </label>
+        <label for="cache_dir">
+          Cache directory
+          <input type="text" id="cache_dir" name="cache_dir" value="{{.CacheDir}}" placeholder="~/.cache/folio">
+          <small>Where git repositories are cloned locally.</small>
+        </label>
+      </fieldset>
+
+      <button type="submit">Complete setup</button>
+    </form>
+  </main>
+</body>
 </html>

@@ -11,7 +11,17 @@ type setupPageData struct {
 }
 
 func (s *Server) handleSetupGet(w http.ResponseWriter, r *http.Request) {
-	http.NotFound(w, r)
+	if s.setupComplete {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	// Also check DB in case setup was completed in a prior run.
+	complete, err := s.dbStore.IsSetupComplete(r.Context())
+	if err == nil && complete {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	s.renderSetup(w, setupPageData{})
 }
 
 func (s *Server) handleSetupPost(w http.ResponseWriter, r *http.Request) {
