@@ -110,6 +110,26 @@ func (s *Store) RepoEntries() []RepoEntry {
 	return out
 }
 
+// RemoveRepo unregisters a repo. The cache directory is left on disk.
+// Thread-safe. No-op if the key is not registered.
+func (s *Store) RemoveRepo(host, owner, name string) {
+	key := host + "/" + owner + "/" + name
+	s.mu.Lock()
+	delete(s.repos, key)
+	s.mu.Unlock()
+}
+
+// EnsureRepos registers all entries, cloning or opening as needed.
+// Replaces the old EnsureCloned. Thread-safe.
+func (s *Store) EnsureRepos(ctx context.Context, entries []RepoEntry) error {
+	for _, e := range entries {
+		if err := s.AddRepo(ctx, e); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Get returns the Repository for the given host/owner/repo triple.
 // Returns ErrNotRegistered if the repo is not registered.
 func (s *Store) Get(host, owner, repo string) (Repository, error) {

@@ -1,6 +1,7 @@
 package gitstore_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -99,5 +100,27 @@ func TestAddRepo_NoOpOnDuplicate(t *testing.T) {
 	repos := s.RepoEntries()
 	if len(repos) != 1 {
 		t.Errorf("expected 1 repo, got %d", len(repos))
+	}
+}
+
+func TestRemoveRepo_RemovesKey(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	s := gitstore.New(t.TempDir(), 5*time.Minute)
+
+	err := s.AddRepo(t.Context(), gitstore.RepoEntry{
+		Host:      "example.com",
+		Owner:     "testuser",
+		Name:      "docs",
+		RemoteURL: "file://" + bareDir,
+	})
+	if err != nil {
+		t.Fatalf("AddRepo: %v", err)
+	}
+
+	s.RemoveRepo("example.com", "testuser", "docs")
+
+	_, err = s.Get("example.com", "testuser", "docs")
+	if !errors.Is(err, gitstore.ErrNotRegistered) {
+		t.Errorf("expected ErrNotRegistered after RemoveRepo, got %v", err)
 	}
 }
