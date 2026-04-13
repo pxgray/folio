@@ -2,92 +2,150 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/pxgray/folio/internal/assets"
-	"github.com/pxgray/folio/internal/config"
+	"github.com/pxgray/folio/internal/auth"
+	"github.com/pxgray/folio/internal/dashboard"
 	"github.com/pxgray/folio/internal/db"
 	"github.com/pxgray/folio/internal/gitstore"
 	"github.com/pxgray/folio/internal/web"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "usage: folio <config.toml>\n")
+	if len(os.Args) < 2 || os.Args[1] != "serve" {
+		fmt.Fprintf(os.Stderr, "usage: folio serve [--db path]\n")
 		os.Exit(1)
 	}
 
-	cfg, err := config.Load(os.Args[1])
-	if err != nil {
+	serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
+	defaultDB := os.Getenv("FOLIO_DB")
+	if defaultDB == "" {
+		defaultDB = "folio.db"
+	}
+	dbPath := serveCmd.String("db", defaultDB, "path to SQLite database file")
+	if err := serveCmd.Parse(os.Args[2:]); err != nil {
 		log.Fatalf("folio: %v", err)
 	}
 
-	store := gitstore.New(cfg.Cache.Dir, cfg.Cache.StaleTTL)
+	store, err := db.Open(*dbPath)
+	if err != nil {
+		log.Fatalf("folio: open db: %v", err)
+	}
+	defer store.Close()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	entries := make([]gitstore.RepoEntry, 0, len(cfg.Repos))
-	for _, rc := range cfg.Repos {
-		entries = append(entries, gitstore.RepoEntry{
-			Host:      rc.Host,
-			Owner:     rc.Owner,
-			Name:      rc.Repo,
-			RemoteURL: rc.Remote,
-		})
-	}
-
-	log.Printf("folio: cloning / opening %d repo(s)...", len(entries))
-	if err := store.EnsureRepos(ctx, entries); err != nil {
-		log.Fatalf("folio: %v", err)
-	}
-
-	if len(cfg.Locals) > 0 {
-		locals := make([]gitstore.LocalEntry, 0, len(cfg.Locals))
-		for _, lc := range cfg.Locals {
-			locals = append(locals, gitstore.LocalEntry{
-				Label:       lc.Label,
-				Path:        lc.Path,
-				TrustedHTML: lc.TrustedHTML,
-			})
+	// Background session cleanup.
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := store.DeleteExpiredSessions(ctx); err != nil {
+					log.Printf("folio: session cleanup: %v", err)
+				}
+			case <-ctx.Done():
+				return
+			}
 		}
-		log.Printf("folio: registering %d local repo(s)...", len(locals))
-		if err := store.OpenLocals(locals); err != nil {
-			log.Fatalf("folio: %v", err)
-		}
-	}
+	}()
 
-	// Temporary: use in-memory db seeded from config.
-	// Phase 3 will replace this with a persistent DB and setup wizard.
-	dbStore, err := db.Open(":memory:")
-	if err != nil {
-		log.Fatalf("folio: db: %v", err)
-	}
-	defer dbStore.Close()
-	if err := seedDBFromConfig(ctx, dbStore, cfg); err != nil {
-		log.Fatalf("folio: seed db: %v", err)
-	}
+	authn := auth.New(store)
 
 	staticFS, err := fs.Sub(assets.StaticFS, "static")
 	if err != nil {
 		log.Fatalf("folio: static fs: %v", err)
 	}
 
-	srv, err := web.New(dbStore, store, assets.TemplateFS, staticFS)
+	setupComplete, err := store.IsSetupComplete(ctx)
 	if err != nil {
-		log.Fatalf("folio: %v", err)
+		log.Fatalf("folio: check setup: %v", err)
 	}
 
+	var docHandler http.Handler
+	var docSrv *web.Server
+	var gitStore *gitstore.Store
+	addr := ":8080"
+
+	if setupComplete {
+		// Load settings.
+		if v, err := store.GetSetting(ctx, "addr"); err == nil && v != "" {
+			addr = v
+		}
+		cacheDir := "~/.cache/folio"
+		if v, err := store.GetSetting(ctx, "cache_dir"); err == nil && v != "" {
+			cacheDir = v
+		}
+		staleTTL := 5 * time.Minute
+		if v, err := store.GetSetting(ctx, "stale_ttl"); err == nil && v != "" {
+			if d, err := time.ParseDuration(v); err == nil {
+				staleTTL = d
+			}
+		}
+
+		gitStore = gitstore.New(cacheDir, staleTTL)
+
+		// Hydrate gitstore from DB.
+		repos, err := store.ListAllRepos(ctx)
+		if err != nil {
+			log.Fatalf("folio: list repos: %v", err)
+		}
+		entries := make([]gitstore.RepoEntry, 0, len(repos))
+		for _, r := range repos {
+			if r.Status == db.RepoStatusReady || r.Status == db.RepoStatusPending {
+				entries = append(entries, gitstore.RepoEntry{
+					Host:      r.Host,
+					Owner:     r.RepoOwner,
+					Name:      r.RepoName,
+					RemoteURL: r.RemoteURL,
+				})
+			}
+		}
+		if err := gitStore.EnsureRepos(ctx, entries); err != nil {
+			log.Printf("folio: EnsureRepos: %v", err)
+		}
+
+		docSrv, err = web.New(store, gitStore, assets.TemplateFS, staticFS)
+		if err != nil {
+			log.Fatalf("folio: web.New: %v", err)
+		}
+		docHandler = docSrv.Handler()
+	}
+
+	dashSrv := dashboard.New(store, gitStore, authn, docSrv, assets.TemplateFS, setupComplete)
+	dashHandler := dashSrv.Handler()
+
+	combined := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if strings.HasPrefix(p, "/-/setup") ||
+			strings.HasPrefix(p, "/-/auth") ||
+			strings.HasPrefix(p, "/-/dashboard") ||
+			strings.HasPrefix(p, "/-/api") {
+			dashHandler.ServeHTTP(w, r)
+			return
+		}
+		if docHandler != nil {
+			docHandler.ServeHTTP(w, r)
+		} else {
+			http.Redirect(w, r, "/-/setup", http.StatusSeeOther)
+		}
+	})
+
 	httpSrv := &http.Server{
-		Addr:         cfg.Server.Addr,
-		Handler:      srv.Handler(),
+		Addr:         addr,
+		Handler:      combined,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -101,39 +159,8 @@ func main() {
 		_ = httpSrv.Shutdown(shutCtx)
 	}()
 
-	log.Printf("folio: listening on %s", cfg.Server.Addr)
+	log.Printf("folio: listening on %s", addr)
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("folio: listen: %v", err)
 	}
-}
-
-// seedDBFromConfig populates an in-memory db.Store from TOML config so that
-// TrustedHTML and WebhookSecret settings take effect. This is a temporary bridge
-// until Phase 3 introduces a persistent database and setup wizard.
-func seedDBFromConfig(ctx context.Context, dbStore db.Store, cfg *config.Config) error {
-	sysUser := &db.User{
-		Email:   "system@folio.local",
-		Name:    "system",
-		IsAdmin: true,
-	}
-	if err := dbStore.CreateUser(ctx, sysUser); err != nil {
-		return fmt.Errorf("create system user: %w", err)
-	}
-	for _, rc := range cfg.Repos {
-		r := &db.Repo{
-			OwnerID:       sysUser.ID,
-			Host:          rc.Host,
-			RepoOwner:     rc.Owner,
-			RepoName:      rc.Repo,
-			RemoteURL:     rc.Remote,
-			WebhookSecret: rc.WebhookSecret,
-			TrustedHTML:   rc.TrustedHTML,
-			StaleTTLSecs:  int64(cfg.Cache.StaleTTL.Seconds()),
-			Status:        db.RepoStatusReady,
-		}
-		if err := dbStore.CreateRepo(ctx, r); err != nil {
-			return fmt.Errorf("insert repo %s: %w", rc.Key(), err)
-		}
-	}
-	return nil
 }
