@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"html/template"
@@ -13,7 +14,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/pxgray/folio/internal/config"
+	"github.com/pxgray/folio/internal/db"
 	"github.com/pxgray/folio/internal/gitstore"
 )
 
@@ -25,25 +26,23 @@ type repoArtifactConfig struct {
 // Server is the Folio HTTP server.
 type Server struct {
 	store     *gitstore.Store
-	docTmpl   *template.Template // base.html + doc.html
-	indexTmpl *template.Template // base.html + index.html
+	dbStore   db.Store // for per-repo settings lookup
+	docTmpl   *template.Template
+	indexTmpl *template.Template
 	staticFS  fs.FS
-	cfg       *config.Config
 
+	mu                 sync.RWMutex
 	repoTrusted        map[string]bool
-	localTrusted       map[string]bool
 	repoSecrets        map[string]string
 	repoArtifactConfig map[string]repoArtifactConfig
-	webhookLimiter     map[string]time.Time
-	webhookMu          sync.Mutex
 
-	rootArtifactDir   string
-	rootArtifactFiles map[string]string
+	webhookLimiter map[string]time.Time
+	webhookMu      sync.Mutex
 }
 
 // New creates a Server. tmplFS should embed templates/*.html and staticFS
 // should contain the static web assets (already sub-rooted at "static/").
-func New(cfg *config.Config, store *gitstore.Store, tmplFS embed.FS, staticFS fs.FS) (*Server, error) {
+func New(dbStore db.Store, gitStore *gitstore.Store, tmplFS embed.FS, staticFS fs.FS) (*Server, error) {
 	funcMap := template.FuncMap{
 		"formatSize": formatSize,
 		"not":        func(b bool) bool { return !b },
@@ -58,33 +57,32 @@ func New(cfg *config.Config, store *gitstore.Store, tmplFS embed.FS, staticFS fs
 		return nil, fmt.Errorf("parse index template: %w", err)
 	}
 
-	repoTrusted := make(map[string]bool, len(cfg.Repos))
-	repoSecrets := make(map[string]string, len(cfg.Repos))
-	repoArtifacts := make(map[string]repoArtifactConfig, len(cfg.Repos))
-	for _, rc := range cfg.Repos {
-		repoTrusted[rc.Key()] = rc.TrustedHTML
-		repoSecrets[rc.Key()] = rc.WebhookSecret
-		repoArtifacts[rc.Key()] = repoArtifactConfig{artifacts: rc.WebArtifacts}
+	ctx := context.Background()
+	allRepos, err := dbStore.ListAllRepos(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("web.New: list repos: %w", err)
 	}
 
-	localTrusted := make(map[string]bool, len(cfg.Locals))
-	for _, lc := range cfg.Locals {
-		localTrusted[lc.Label] = lc.TrustedHTML
+	repoTrusted := make(map[string]bool, len(allRepos))
+	repoSecrets := make(map[string]string, len(allRepos))
+	repoArtifacts := make(map[string]repoArtifactConfig, len(allRepos))
+	for _, r := range allRepos {
+		key := r.Host + "/" + r.RepoOwner + "/" + r.RepoName
+		repoTrusted[key] = r.TrustedHTML
+		repoSecrets[key] = r.WebhookSecret
+		repoArtifacts[key] = repoArtifactConfig{artifacts: nil}
 	}
 
 	return &Server{
-		store:              store,
+		store:              gitStore,
+		dbStore:            dbStore,
 		docTmpl:            docTmpl,
 		indexTmpl:          indexTmpl,
 		staticFS:           staticFS,
-		cfg:                cfg,
 		repoTrusted:        repoTrusted,
-		localTrusted:       localTrusted,
 		repoSecrets:        repoSecrets,
 		repoArtifactConfig: repoArtifacts,
 		webhookLimiter:     make(map[string]time.Time),
-		rootArtifactDir:    cfg.RootArtifacts.Dir,
-		rootArtifactFiles:  cfg.RootArtifacts.Files,
 	}, nil
 }
 

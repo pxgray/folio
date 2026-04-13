@@ -6,19 +6,19 @@
   <ul class="repo-list-items">
     {{range .Repos}}
     <li>
-      <a href="/{{.Host}}/{{.Owner}}/{{.Repo}}">{{.Host}}/{{.Owner}}/{{.Repo}}</a>
+      <a href="/{{.}}">{{.}}</a>
     </li>
     {{end}}
   </ul>
   {{else}}
-  <p class="empty">No repositories configured. Add entries to <code>folio.toml</code>.</p>
+  <p class="empty">No repositories configured.</p>
   {{end}}
   {{if .Locals}}
   <h2>Local</h2>
   <ul class="repo-list-items">
     {{range .Locals}}
     <li>
-      <a href="/local/{{.Label}}">{{.Label}}</a>
+      <a href="/local/{{.}}">{{.}}</a>
     </li>
     {{end}}
   </ul>

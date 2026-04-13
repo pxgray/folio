@@ -57,7 +57,9 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := host + "/" + owner + "/" + repo
+	s.mu.RLock()
 	trusted := s.repoTrusted[key]
+	s.mu.RUnlock()
 
 	repoBase := "/" + host + "/" + owner + "/" + repo
 	repoName := host + "/" + owner + "/" + repo
@@ -83,7 +85,7 @@ func (s *Server) handleLocalDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trusted := s.localTrusted[label]
+	trusted := false // local repos: TrustedHTML not yet supported via db.Store
 
 	repoBase := "/local/" + label
 	repoName := "local/" + label
@@ -234,8 +236,8 @@ func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Title         string
-		Repos         interface{}
-		Locals        interface{}
+		Repos         []string
+		Locals        []string
 		TOC           template.HTML
 		RepoBase      string
 		RepoName      string
@@ -245,8 +247,8 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ActiveSection int
 	}{
 		Title:  "Folio",
-		Repos:  s.store.Repos(),
-		Locals: s.store.Locals(),
+		Repos:  s.store.RepoKeys(),
+		Locals: s.store.LocalLabels(),
 	}
 
 	var buf bytes.Buffer

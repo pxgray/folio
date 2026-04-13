@@ -3,8 +3,6 @@ package web
 import (
 	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/pxgray/folio/internal/gitstore"
@@ -20,36 +18,8 @@ var artifactContentType = map[string]string{
 }
 
 func (s *Server) handleRootArtifact(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-
-	if content, ok := s.rootArtifactFiles[name]; ok {
-		ct := artifactContentType[name]
-		if ct == "" {
-			ct = "text/plain; charset=utf-8"
-		}
-		w.Header().Set("Content-Type", ct)
-		_, _ = w.Write([]byte(content))
-		return
-	}
-
-	if s.rootArtifactDir != "" {
-		p := filepath.Join(s.rootArtifactDir, name)
-		data, err := os.ReadFile(p)
-		if err == nil {
-			ct := artifactContentType[name]
-			if ct == "" {
-				ct = "text/plain; charset=utf-8"
-			}
-			w.Header().Set("Content-Type", ct)
-			_, _ = w.Write(data)
-			return
-		}
-		if !errors.Is(err, os.ErrNotExist) {
-			httpError(w, http.StatusInternalServerError, "error reading artifact")
-			return
-		}
-	}
-
+	// Root artifacts are not yet supported without a config.Config.
+	// The route is registered to reserve the URL namespace.
 	httpError(w, http.StatusNotFound, "artifact not found")
 }
 
