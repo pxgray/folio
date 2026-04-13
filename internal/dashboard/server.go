@@ -71,6 +71,11 @@ func (s *Server) Handler() http.Handler {
 	r.Post("/-/api/v1/auth/login", s.handleAPILogin)
 	r.Post("/-/api/v1/auth/logout", s.handleAPILogout)
 	r.Get("/-/api/v1/auth/me", auth.RequireAuth(s.authn)(http.HandlerFunc(s.handleAPIMe)).ServeHTTP)
+	r.Route("/-/api/v1/repos", func(r chi.Router) {
+		r.Use(auth.RequireAuth(s.authn))
+		r.Get("/", s.handleAPIListRepos)
+		r.Post("/", s.handleAPICreateRepo)
+	})
 	return r
 }
 
