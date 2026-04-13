@@ -286,10 +286,7 @@ func TestDashboardRepoNew_POST_MissingField(t *testing.T) {
 
 	body, _ := io.ReadAll(resp.Body)
 	bodyStr := string(body)
-	if !strings.Contains(bodyStr, "required") && !strings.Contains(bodyStr, "required") {
-		// Accept any error message mentioning the validation failure.
-		if !strings.Contains(bodyStr, "Host") && !strings.Contains(bodyStr, "error") {
-			t.Errorf("expected error message in body, got:\n%s", bodyStr)
-		}
+	if !strings.Contains(bodyStr, "required") && !strings.Contains(bodyStr, "Host") && !strings.Contains(bodyStr, "error") {
+		t.Errorf("expected error message in body, got:\n%s", bodyStr)
 	}
 }
