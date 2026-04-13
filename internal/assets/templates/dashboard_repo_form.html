@@ -1,0 +1,70 @@
+{{define "content"}}
+<div class="dashboard-page">
+  <h1>{{if .Repo}}Edit Repo{{else}}Add Repo{{end}}</h1>
+
+  {{if .Flash}}<div class="flash flash-success">{{.Flash}}</div>{{end}}
+  {{if .Error}}<div class="flash flash-error">{{.Error}}</div>{{end}}
+
+  <form method="post"
+        action="{{if .Repo}}/-/dashboard/repos/{{.Repo.ID}}{{else}}/-/dashboard/repos/new{{end}}">
+
+    <label>Host
+      <input type="text" name="host" required
+             value="{{if .Repo}}{{.Repo.Host}}{{end}}">
+    </label>
+
+    <label>Owner
+      <input type="text" name="owner" required
+             value="{{if .Repo}}{{.Repo.RepoOwner}}{{end}}">
+    </label>
+
+    <label>Repo Name
+      <input type="text" name="repo_name" required
+             value="{{if .Repo}}{{.Repo.RepoName}}{{end}}">
+    </label>
+
+    <label>Remote URL <small>(optional override)</small>
+      <input type="url" name="remote_url"
+             value="{{if .Repo}}{{.Repo.RemoteURL}}{{end}}">
+    </label>
+
+    <label>Webhook Secret <small>(optional)</small>
+      <input type="text" name="webhook_secret"
+             value="{{if .Repo}}{{.Repo.WebhookSecret}}{{end}}">
+    </label>
+
+    <label>
+      <input type="checkbox" name="trusted_html"
+             {{if .Repo}}{{if .Repo.TrustedHTML}}checked{{end}}{{end}}>
+      Trust raw HTML in Markdown
+    </label>
+
+    <button type="submit" class="btn btn-primary">
+      {{if .Repo}}Save Changes{{else}}Add Repo{{end}}
+    </button>
+    <a href="/-/dashboard/" class="btn">Cancel</a>
+  </form>
+
+  {{if .Repo}}
+  <hr>
+
+  {{if .WebhookURL}}
+  <section>
+    <h2>Webhook URL</h2>
+    <code>{{.WebhookURL}}</code>
+  </section>
+  {{end}}
+
+  <section class="danger-zone">
+    <h2>Actions</h2>
+    <form method="post" action="/-/dashboard/repos/{{.Repo.ID}}/sync" style="display:inline">
+      <button type="submit" class="btn">Sync Now</button>
+    </form>
+    <form method="post" action="/-/dashboard/repos/{{.Repo.ID}}/delete" style="display:inline">
+      <button type="submit" class="btn btn-danger"
+        onclick="return confirm('Delete this repo? This cannot be undone.')">Delete</button>
+    </form>
+  </section>
+  {{end}}
+</div>
+{{end}}

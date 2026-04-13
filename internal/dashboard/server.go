@@ -83,6 +83,8 @@ func (s *Server) Handler() http.Handler {
 	r.Route("/-/dashboard", func(r chi.Router) {
 		r.Use(auth.RequireAuth(s.authn))
 		r.Get("/", s.handleRepoList)
+		r.Get("/repos/new", s.handleRepoNew)
+		r.Post("/repos/new", s.handleRepoCreate)
 	})
 	return r
 }
