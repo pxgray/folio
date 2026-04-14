@@ -281,6 +281,78 @@ func TestAdminDeleteUser_SelfDelete(t *testing.T) {
 	}
 }
 
+func TestAdminGetSettings(t *testing.T) {
+	srv, adminTok, _, store := adminTestServerWithStore(t)
+	ctx := context.Background()
+	store.UpsertSetting(ctx, "addr", ":8080")
+	store.UpsertSetting(ctx, "cache_dir", "~/.cache/folio")
+
+	req, _ := http.NewRequest("GET", srv.URL+"/-/api/v1/admin/settings", nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var settings map[string]string
+	json.NewDecoder(resp.Body).Decode(&settings)
+	if settings["addr"] != ":8080" {
+		t.Fatalf("expected :8080, got %q", settings["addr"])
+	}
+	// All known keys must be present (empty string if not set).
+	for _, key := range []string{"addr", "cache_dir", "stale_ttl", "base_url",
+		"oauth_github_client_id", "oauth_github_client_secret",
+		"oauth_google_client_id", "oauth_google_client_secret"} {
+		if _, ok := settings[key]; !ok {
+			t.Errorf("missing key %q in settings response", key)
+		}
+	}
+}
+
+func TestAdminPatchSettings_RestartRequired(t *testing.T) {
+	srv, adminTok, _, _ := adminTestServerWithStore(t)
+
+	body := strings.NewReader(`{"addr":":9090"}`)
+	req, _ := http.NewRequest("PATCH", srv.URL+"/-/api/v1/admin/settings", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result["restart_required"] != true {
+		t.Fatalf("expected restart_required=true, got %v", result["restart_required"])
+	}
+}
+
+func TestAdminPatchSettings_NoRestart(t *testing.T) {
+	srv, adminTok, _, _ := adminTestServerWithStore(t)
+
+	body := strings.NewReader(`{"base_url":"https://docs.example.com"}`)
+	req, _ := http.NewRequest("PATCH", srv.URL+"/-/api/v1/admin/settings", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var result map[string]any
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result["restart_required"] == true {
+		t.Fatal("expected restart_required=false for base_url change")
+	}
+}
+
 func TestAdminUpdateUser_SelfDemote(t *testing.T) {
 	srv, adminTok, _ := adminTestServer(t)
 	req, _ := http.NewRequest("GET", srv.URL+"/-/api/v1/admin/users", nil)

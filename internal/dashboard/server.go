@@ -85,6 +85,8 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/users", s.handleAdminListUsers)
 		r.Patch("/users/{id}", s.handleAdminUpdateUser)
 		r.Delete("/users/{id}", s.handleAdminDeleteUser)
+		r.Get("/settings", s.handleAdminGetSettings)
+		r.Patch("/settings", s.handleAdminPatchSettings)
 	})
 	r.Route("/-/dashboard", func(r chi.Router) {
 		r.Use(auth.RequireAuth(s.authn))
