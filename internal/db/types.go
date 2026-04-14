@@ -6,7 +6,7 @@ type User struct {
 	ID        int64
 	Email     string
 	Name      string
-	Password  string    // bcrypt hash; empty for OAuth-only accounts
+	Password  string // bcrypt hash; empty for OAuth-only accounts
 	IsAdmin   bool
 	CreatedAt time.Time
 }
