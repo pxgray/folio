@@ -622,3 +622,80 @@ footer { text-align: center; font-size: 0.8rem; color: var(--pico-muted-color); 
   font-size: 0.875rem;
 }
 .oauth-row:last-child { border-bottom: none; }
+
+/* ── Login page ── */
+
+/* body is already display:flex flex-direction:column min-height:100vh.
+   margin:auto on .login-box centers it in both axes. */
+body:has(.login-box) {
+  background: #f1f5f9;
+  justify-content: center;
+}
+
+.login-box {
+  margin: auto;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 2rem 2.25rem;
+  width: 360px;
+  max-width: calc(100vw - 2rem);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06);
+}
+
+.login-box h1 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+}
+
+.login-box .error {
+  color: #991b1b;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 5px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.oauth-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.btn-github,
+.btn-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #374151;
+}
+
+.btn-github {
+  background: #24292f;
+  border-color: #24292f;
+  color: #fff;
+}
+.btn-github:hover {
+  background: #1a1e22;
+  border-color: #1a1e22;
+  color: #fff;
+  text-decoration: none;
+}
+
+.btn-google:hover {
+  background: #f8fafc;
+  text-decoration: none;
+}
