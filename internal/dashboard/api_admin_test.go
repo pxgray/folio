@@ -119,7 +119,10 @@ func TestAdminUpdateUser_Promote(t *testing.T) {
 		fmt.Sprintf("%s/-/api/v1/admin/users/%.0f", srv.URL, regularID), body)
 	req2.Header.Set("Content-Type", "application/json")
 	req2.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
-	resp2, _ := http.DefaultClient.Do(req2)
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp2.Body.Close()
 	if resp2.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp2.StatusCode)
@@ -147,7 +150,10 @@ func TestAdminUpdateUser_DemoteLastAdmin(t *testing.T) {
 		fmt.Sprintf("%s/-/api/v1/admin/users/%.0f", srv.URL, adminID), body)
 	req2.Header.Set("Content-Type", "application/json")
 	req2.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
-	resp2, _ := http.DefaultClient.Do(req2)
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp2.Body.Close()
 	if resp2.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422, got %d", resp2.StatusCode)
@@ -187,7 +193,10 @@ func TestAdminUpdateUser_SelfDemote(t *testing.T) {
 		fmt.Sprintf("%s/-/api/v1/admin/users/%.0f", srv.URL, adminID), body)
 	req2.Header.Set("Content-Type", "application/json")
 	req2.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
-	resp2, _ := http.DefaultClient.Do(req2)
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp2.Body.Close()
 	if resp2.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422, got %d", resp2.StatusCode)
