@@ -1,0 +1,58 @@
+{{define "content"}}
+<div class="dashboard-content">
+  <h1>Users</h1>
+
+  {{if .Flash}}
+  <div class="flash flash-success">{{.Flash}}</div>
+  {{end}}
+
+  <a href="/-/dashboard/admin/users/new" class="button">Add User</a>
+
+  <table class="users-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Role</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Users}}
+      <tr>
+        <td>{{.Name}}{{if eq .ID $.User.ID}} <span class="badge badge-self">You</span>{{end}}</td>
+        <td>{{.Email}}</td>
+        <td>
+          {{if .IsAdmin}}
+          <span class="badge badge-admin">Admin</span>
+          {{else}}
+          <span class="badge badge-user">User</span>
+          {{end}}
+        </td>
+        <td>{{.CreatedAt.Format "2006-01-02"}}</td>
+        <td>
+          <a href="/-/dashboard/admin/users/{{.ID}}">Edit</a>
+          &nbsp;
+          <form method="POST" action="/-/dashboard/admin/users/{{.ID}}/toggle-admin" style="display:inline">
+            {{if .IsAdmin}}
+            <button type="submit">Demote</button>
+            {{else}}
+            <button type="submit">Promote</button>
+            {{end}}
+          </form>
+          &nbsp;
+          {{if eq .ID $.User.ID}}
+          <button disabled title="Cannot delete your own account">Delete</button>
+          {{else}}
+          <form method="POST" action="/-/dashboard/admin/users/{{.ID}}/delete" style="display:inline">
+            <button type="submit">Delete</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}

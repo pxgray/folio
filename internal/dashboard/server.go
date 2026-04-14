@@ -100,6 +100,10 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/settings", s.handleSettingsGet)
 		r.Post("/settings", s.handleSettingsPost)
 		r.Post("/settings/unlink/{provider}", s.handleOAuthUnlink)
+		r.Route("/admin", func(r chi.Router) {
+			r.Use(auth.RequireAdmin(s.authn))
+			r.Get("/", s.handleAdminUsersPage)
+		})
 	})
 	return r
 }
