@@ -3,8 +3,10 @@ package dashboard_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/pxgray/folio/internal/assets"
@@ -92,5 +94,102 @@ func TestAdminListUsers_NonAdmin(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", resp.StatusCode)
+	}
+}
+
+func TestAdminUpdateUser_Promote(t *testing.T) {
+	srv, adminTok, _ := adminTestServer(t)
+	// get user list to find regular user id
+	req, _ := http.NewRequest("GET", srv.URL+"/-/api/v1/admin/users", nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
+	resp, _ := http.DefaultClient.Do(req)
+	var users []map[string]any
+	json.NewDecoder(resp.Body).Decode(&users)
+	resp.Body.Close()
+
+	var regularID float64
+	for _, u := range users {
+		if u["email"] == "user@example.com" {
+			regularID = u["id"].(float64)
+		}
+	}
+
+	body := strings.NewReader(`{"is_admin":true}`)
+	req2, _ := http.NewRequest("PATCH",
+		fmt.Sprintf("%s/-/api/v1/admin/users/%.0f", srv.URL, regularID), body)
+	req2.Header.Set("Content-Type", "application/json")
+	req2.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
+	resp2, _ := http.DefaultClient.Do(req2)
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp2.StatusCode)
+	}
+}
+
+func TestAdminUpdateUser_DemoteLastAdmin(t *testing.T) {
+	srv, adminTok, _ := adminTestServer(t)
+	req, _ := http.NewRequest("GET", srv.URL+"/-/api/v1/admin/users", nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
+	resp, _ := http.DefaultClient.Do(req)
+	var users []map[string]any
+	json.NewDecoder(resp.Body).Decode(&users)
+	resp.Body.Close()
+
+	var adminID float64
+	for _, u := range users {
+		if u["is_admin"].(bool) {
+			adminID = u["id"].(float64)
+		}
+	}
+
+	body := strings.NewReader(`{"is_admin":false}`)
+	req2, _ := http.NewRequest("PATCH",
+		fmt.Sprintf("%s/-/api/v1/admin/users/%.0f", srv.URL, adminID), body)
+	req2.Header.Set("Content-Type", "application/json")
+	req2.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
+	resp2, _ := http.DefaultClient.Do(req2)
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d", resp2.StatusCode)
+	}
+}
+
+func TestAdminUpdateUser_SelfDemote(t *testing.T) {
+	srv, adminTok, _ := adminTestServer(t)
+	req, _ := http.NewRequest("GET", srv.URL+"/-/api/v1/admin/users", nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
+	resp, _ := http.DefaultClient.Do(req)
+	var users []map[string]any
+	json.NewDecoder(resp.Body).Decode(&users)
+	resp.Body.Close()
+
+	var adminID float64
+	var regularID float64
+	for _, u := range users {
+		if u["email"] == "admin@example.com" {
+			adminID = u["id"].(float64)
+		}
+		if u["email"] == "user@example.com" {
+			regularID = u["id"].(float64)
+		}
+	}
+
+	// Promote the regular user first so we're not demoting the last admin
+	promoteBody := strings.NewReader(`{"is_admin":true}`)
+	req3, _ := http.NewRequest("PATCH",
+		fmt.Sprintf("%s/-/api/v1/admin/users/%.0f", srv.URL, regularID), promoteBody)
+	req3.Header.Set("Content-Type", "application/json")
+	req3.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
+	http.DefaultClient.Do(req3)
+
+	body := strings.NewReader(`{"is_admin":false}`)
+	req2, _ := http.NewRequest("PATCH",
+		fmt.Sprintf("%s/-/api/v1/admin/users/%.0f", srv.URL, adminID), body)
+	req2.Header.Set("Content-Type", "application/json")
+	req2.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
+	resp2, _ := http.DefaultClient.Do(req2)
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d", resp2.StatusCode)
 	}
 }
