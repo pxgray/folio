@@ -357,12 +357,10 @@ footer { text-align: center; font-size: 0.8rem; color: var(--pico-muted-color); 
 .badge { display: inline-block; padding: 0.15em 0.5em; border-radius: 3px; font-size: 0.85em; }
 .badge-pending_clone { background: #fef3c7; color: #92400e; }
 .badge-ready { background: #d1fae5; color: #065f46; }
+.badge-error { background: #fee2e2; color: #991b1b; }
 
 /* ── Dashboard layout ── */
-
-body.dashboard {
-  /* body is already flex column (min-height:100vh) from global rules */
-}
+/* body.dashboard inherits display:flex flex-direction:column from global body rule */
 
 .dash-layout {
   flex: 1;
@@ -430,4 +428,3 @@ body.dashboard {
   color: var(--pico-color);
   background: #f1f5f9;
 }
-.badge-error { background: #fee2e2; color: #991b1b; }
