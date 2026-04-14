@@ -10,9 +10,17 @@
 <body class="dashboard">
   <div class="dash-layout">
     <nav class="dash-sidebar">
-      <a href="/-/dashboard/">Repos</a>
-      <a href="/-/dashboard/settings">Settings</a>
-      {{if .IsAdmin}}<a href="/-/dashboard/admin/">Admin</a>{{end}}
+      <div class="sidebar-brand">Folio</div>
+      <div class="sidebar-nav">
+        <span class="sidebar-nav-label">Dashboard</span>
+        <a href="/-/dashboard/">Repos</a>
+        <a href="/-/dashboard/settings">Settings</a>
+        {{if .IsAdmin}}
+        <span class="sidebar-nav-label">Admin</span>
+        <a href="/-/dashboard/admin/">Users</a>
+        <a href="/-/dashboard/admin/settings">Settings</a>
+        {{end}}
+      </div>
     </nav>
     <main class="dash-main">
       {{if .Flash}}<div role="alert" class="flash">{{.Flash}}</div>{{end}}
