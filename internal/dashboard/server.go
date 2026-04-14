@@ -82,7 +82,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	r.Route("/-/api/v1/admin", func(r chi.Router) {
 		r.Use(auth.RequireAdmin(s.authn))
-		r.Get("/users", s.HandleAdminListUsers)
+		r.Get("/users", s.handleAdminListUsers)
 	})
 	r.Route("/-/dashboard", func(r chi.Router) {
 		r.Use(auth.RequireAuth(s.authn))

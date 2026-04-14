@@ -1,13 +1,12 @@
 package dashboard
 
 import (
-	"encoding/json"
 	"net/http"
 )
 
-// HandleAdminListUsers handles GET /-/api/v1/admin/users.
+// handleAdminListUsers handles GET /-/api/v1/admin/users.
 // Returns a JSON array of all users. Requires admin role.
-func (s *Server) HandleAdminListUsers(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := s.dbStore.ListUsers(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list users"})
@@ -30,6 +29,5 @@ func (s *Server) HandleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: u.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(rows)
+	writeJSON(w, http.StatusOK, rows)
 }

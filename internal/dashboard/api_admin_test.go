@@ -24,17 +24,33 @@ func adminTestServer(t *testing.T) (*httptest.Server, string, string) {
 	t.Cleanup(func() { store.Close() })
 	ctx := context.Background()
 
-	adminPw, _ := auth.HashPassword("adminpass")
+	adminPw, err := auth.HashPassword("adminpass")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
 	adminUser := &db.User{Email: "admin@example.com", Name: "Admin", IsAdmin: true, Password: adminPw}
-	store.CreateUser(ctx, adminUser)
+	if err := store.CreateUser(ctx, adminUser); err != nil {
+		t.Fatalf("CreateUser admin: %v", err)
+	}
 
-	regularPw, _ := auth.HashPassword("userpass")
+	regularPw, err := auth.HashPassword("userpass")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
 	regularUser := &db.User{Email: "user@example.com", Name: "Regular", IsAdmin: false, Password: regularPw}
-	store.CreateUser(ctx, regularUser)
+	if err := store.CreateUser(ctx, regularUser); err != nil {
+		t.Fatalf("CreateUser regular: %v", err)
+	}
 
 	authn := auth.New(store)
-	adminSess, _ := authn.NewSession(ctx, adminUser.ID)
-	regularSess, _ := authn.NewSession(ctx, regularUser.ID)
+	adminSess, err := authn.NewSession(ctx, adminUser.ID)
+	if err != nil {
+		t.Fatalf("NewSession admin: %v", err)
+	}
+	regularSess, err := authn.NewSession(ctx, regularUser.ID)
+	if err != nil {
+		t.Fatalf("NewSession regular: %v", err)
+	}
 
 	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, false)
 	ts := httptest.NewServer(srv.Handler())
@@ -55,7 +71,7 @@ func TestAdminListUsers_AsAdmin(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
-	var users []map[string]interface{}
+	var users []map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&users); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
