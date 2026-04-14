@@ -1,0 +1,35 @@
+{{define "content"}}
+<div class="dashboard-content">
+  <h1>Edit User</h1>
+
+  {{if .Error}}
+  <div class="flash flash-error">{{.Error}}</div>
+  {{end}}
+  {{if .Flash}}
+  <div class="flash flash-success">{{.Flash}}</div>
+  {{end}}
+
+  <form method="POST" action="/-/dashboard/admin/users/{{.Target.ID}}">
+    <label>Name
+      <input type="text" name="name" value="{{.Target.Name}}" required>
+    </label>
+    <label>Email
+      <input type="email" name="email" value="{{.Target.Email}}" required>
+    </label>
+    <label>New Password <small>(leave blank to keep current)</small>
+      <input type="password" name="password" autocomplete="new-password">
+    </label>
+    <label>
+      {{if eq .Target.ID .User.ID}}
+      <input type="checkbox" name="is_admin" disabled {{if .Target.IsAdmin}}checked{{end}}>
+      Admin <small>(cannot change your own admin status)</small>
+      {{else}}
+      <input type="checkbox" name="is_admin" value="true" {{if .Target.IsAdmin}}checked{{end}}>
+      Admin
+      {{end}}
+    </label>
+    <button type="submit">Save</button>
+    <a href="/-/dashboard/admin/">Cancel</a>
+  </form>
+</div>
+{{end}}

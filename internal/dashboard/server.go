@@ -103,6 +103,10 @@ func (s *Server) Handler() http.Handler {
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(auth.RequireAdmin(s.authn))
 			r.Get("/", s.handleAdminUsersPage)
+			r.Get("/users/{id}", s.handleAdminUserEditPage)
+			r.Post("/users/{id}", s.handleAdminUserEditPost)
+			r.Post("/users/{id}/delete", s.handleAdminUserDeletePost)
+			r.Post("/users/{id}/toggle-admin", s.handleAdminToggleAdmin)
 		})
 	})
 	return r
