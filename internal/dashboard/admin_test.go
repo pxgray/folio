@@ -78,6 +78,68 @@ func TestAdminUserEditPage_GET(t *testing.T) {
 	}
 }
 
+func TestAdminSettingsPage_GET(t *testing.T) {
+	srv, adminTok, _, store := adminTestServerWithStore(t)
+	ctx := context.Background()
+	store.UpsertSetting(ctx, "addr", ":8080")
+
+	req, _ := http.NewRequest("GET", srv.URL+"/-/dashboard/admin/settings", nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	body := new(strings.Builder)
+	io.Copy(body, resp.Body)
+	if !strings.Contains(body.String(), ":8080") {
+		t.Error("expected addr value in settings form")
+	}
+	if !strings.Contains(body.String(), "requires a server restart") {
+		t.Error("expected restart warning banner in settings page")
+	}
+}
+
+func TestAdminSettingsPage_POST(t *testing.T) {
+	srv, adminTok, _, store := adminTestServerWithStore(t)
+	ctx := context.Background()
+
+	form := url.Values{
+		"addr":                       {":9090"},
+		"cache_dir":                  {"~/.cache/folio"},
+		"stale_ttl":                  {"10m"},
+		"base_url":                   {""},
+		"oauth_github_client_id":     {""},
+		"oauth_github_client_secret": {""},
+		"oauth_google_client_id":     {""},
+		"oauth_google_client_secret": {""},
+	}
+	req, _ := http.NewRequest("POST", srv.URL+"/-/dashboard/admin/settings",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
+
+	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect, got %d", resp.StatusCode)
+	}
+
+	val, _ := store.GetSetting(ctx, "addr")
+	if val != ":9090" {
+		t.Fatalf("expected addr ':9090', got %q", val)
+	}
+}
+
 func TestAdminUserEditPage_POST(t *testing.T) {
 	srv, adminTok, _, store := adminTestServerWithStore(t)
 	ctx := context.Background()

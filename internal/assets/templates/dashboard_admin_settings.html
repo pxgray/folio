@@ -1,0 +1,53 @@
+{{define "content"}}
+<div class="dashboard-content">
+  <h1>Server Settings</h1>
+
+  {{if .Flash}}
+  <div class="flash flash-success">{{.Flash}}</div>
+  {{end}}
+
+  <form method="POST" action="/-/dashboard/admin/settings">
+
+    <section>
+      <h2>Server</h2>
+      <div class="field-warning">
+        Changing <strong>Server Address</strong> or <strong>Cache Directory</strong> requires a server restart.
+      </div>
+      <label>Server Address
+        <input type="text" name="addr" value="{{index .Settings "addr"}}">
+      </label>
+      <label>Cache Directory
+        <input type="text" name="cache_dir" value="{{index .Settings "cache_dir"}}">
+      </label>
+      <label>Stale TTL <small>(e.g. 5m, 0 for webhook-only)</small>
+        <input type="text" name="stale_ttl" value="{{index .Settings "stale_ttl"}}">
+      </label>
+      <label>Base URL <small>(used for webhook URLs; leave blank to auto-detect)</small>
+        <input type="text" name="base_url" value="{{index .Settings "base_url"}}">
+      </label>
+    </section>
+
+    <section>
+      <h2>OAuth — GitHub</h2>
+      <label>Client ID
+        <input type="text" name="oauth_github_client_id" value="{{index .Settings "oauth_github_client_id"}}">
+      </label>
+      <label>Client Secret
+        <input type="password" name="oauth_github_client_secret" value="{{index .Settings "oauth_github_client_secret"}}">
+      </label>
+    </section>
+
+    <section>
+      <h2>OAuth — Google</h2>
+      <label>Client ID
+        <input type="text" name="oauth_google_client_id" value="{{index .Settings "oauth_google_client_id"}}">
+      </label>
+      <label>Client Secret
+        <input type="password" name="oauth_google_client_secret" value="{{index .Settings "oauth_google_client_secret"}}">
+      </label>
+    </section>
+
+    <button type="submit">Save Settings</button>
+  </form>
+</div>
+{{end}}

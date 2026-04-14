@@ -193,6 +193,44 @@ func (s *Server) handleAdminToggleAdmin(w http.ResponseWriter, r *http.Request) 
 	http.Redirect(w, r, "/-/dashboard/admin/", http.StatusSeeOther)
 }
 
+// handleAdminSettingsPage handles GET /-/dashboard/admin/settings.
+func (s *Server) handleAdminSettingsPage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	currentUser := auth.UserFromContext(ctx)
+
+	settings := make(map[string]string, len(knownSettings))
+	for _, key := range knownSettings {
+		val, err := s.dbStore.GetSetting(ctx, key)
+		if err != nil {
+			val = ""
+		}
+		settings[key] = val
+	}
+	data := adminSettingsData{
+		Title:    "Admin — Settings",
+		IsAdmin:  true,
+		Flash:    getFlash(w, r),
+		User:     currentUser,
+		Settings: settings,
+	}
+	s.renderTemplate(w, "dashboard_admin_settings.html", data)
+}
+
+// handleAdminSettingsPost handles POST /-/dashboard/admin/settings.
+func (s *Server) handleAdminSettingsPost(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	for _, key := range knownSettings {
+		val := r.FormValue(key)
+		s.dbStore.UpsertSetting(ctx, key, val)
+	}
+	setFlash(w, "Settings saved.")
+	http.Redirect(w, r, "/-/dashboard/admin/settings", http.StatusSeeOther)
+}
+
 // handleAdminUsersPage handles GET /-/dashboard/admin/.
 func (s *Server) handleAdminUsersPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

@@ -107,6 +107,8 @@ func (s *Server) Handler() http.Handler {
 			r.Post("/users/{id}", s.handleAdminUserEditPost)
 			r.Post("/users/{id}/delete", s.handleAdminUserDeletePost)
 			r.Post("/users/{id}/toggle-admin", s.handleAdminToggleAdmin)
+			r.Get("/settings", s.handleAdminSettingsPage)
+			r.Post("/settings", s.handleAdminSettingsPost)
 		})
 	})
 	return r
