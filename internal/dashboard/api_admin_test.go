@@ -160,6 +160,127 @@ func TestAdminUpdateUser_DemoteLastAdmin(t *testing.T) {
 	}
 }
 
+// adminTestServerWithStore is like adminTestServer but also returns the db.Store
+// so tests can inspect or mutate DB state directly.
+func adminTestServerWithStore(t *testing.T) (*httptest.Server, string, string, db.Store) {
+	t.Helper()
+	store, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	ctx := context.Background()
+
+	adminPw, err := auth.HashPassword("adminpass")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	adminUser := &db.User{Email: "admin@example.com", Name: "Admin", IsAdmin: true, Password: adminPw}
+	if err := store.CreateUser(ctx, adminUser); err != nil {
+		t.Fatalf("CreateUser admin: %v", err)
+	}
+
+	regularPw, err := auth.HashPassword("userpass")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	regularUser := &db.User{Email: "user@example.com", Name: "Regular", IsAdmin: false, Password: regularPw}
+	if err := store.CreateUser(ctx, regularUser); err != nil {
+		t.Fatalf("CreateUser regular: %v", err)
+	}
+
+	authn := auth.New(store)
+	adminSess, err := authn.NewSession(ctx, adminUser.ID)
+	if err != nil {
+		t.Fatalf("NewSession admin: %v", err)
+	}
+	regularSess, err := authn.NewSession(ctx, regularUser.ID)
+	if err != nil {
+		t.Fatalf("NewSession regular: %v", err)
+	}
+
+	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, false)
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	return ts, adminSess.Token, regularSess.Token, store
+}
+
+func TestAdminDeleteUser_CascadesRepos(t *testing.T) {
+	srv, adminTok, _, store := adminTestServerWithStore(t)
+	ctx := context.Background()
+
+	// find regular user id
+	users, err := store.ListUsers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var regularID int64
+	for _, u := range users {
+		if u.Email == "user@example.com" {
+			regularID = u.ID
+		}
+	}
+
+	// Seed a repo for the regular user.
+	if err := store.CreateRepo(ctx, &db.Repo{
+		OwnerID:   regularID,
+		Host:      "github.com",
+		RepoOwner: "acme",
+		RepoName:  "docs",
+		Status:    "ready",
+	}); err != nil {
+		t.Fatalf("CreateRepo: %v", err)
+	}
+
+	req, _ := http.NewRequest("DELETE",
+		fmt.Sprintf("%s/-/api/v1/admin/users/%d", srv.URL, regularID), nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	// Verify user is gone from DB.
+	remaining, _ := store.ListUsers(ctx)
+	for _, u := range remaining {
+		if u.ID == regularID {
+			t.Fatal("expected user to be deleted from DB")
+		}
+	}
+}
+
+func TestAdminDeleteUser_SelfDelete(t *testing.T) {
+	srv, adminTok, _, store := adminTestServerWithStore(t)
+	ctx := context.Background()
+
+	users, err := store.ListUsers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var adminID int64
+	for _, u := range users {
+		if u.Email == "admin@example.com" {
+			adminID = u.ID
+		}
+	}
+
+	req, _ := http.NewRequest("DELETE",
+		fmt.Sprintf("%s/-/api/v1/admin/users/%d", srv.URL, adminID), nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: adminTok})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d", resp.StatusCode)
+	}
+}
+
 func TestAdminUpdateUser_SelfDemote(t *testing.T) {
 	srv, adminTok, _ := adminTestServer(t)
 	req, _ := http.NewRequest("GET", srv.URL+"/-/api/v1/admin/users", nil)

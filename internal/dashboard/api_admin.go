@@ -112,3 +112,44 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
+
+// handleAdminDeleteUser handles DELETE /-/api/v1/admin/users/{id}.
+func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	currentUser := auth.UserFromContext(ctx)
+
+	idStr := chi.URLParam(r, "id")
+	targetID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid user id"})
+		return
+	}
+
+	if targetID == currentUser.ID {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "cannot delete your own account"})
+		return
+	}
+
+	// Remove all repos owned by this user from the live gitStore before deleting from DB.
+	repos, err := s.dbStore.ListReposByOwner(ctx, targetID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list repos"})
+		return
+	}
+	if s.gitStore != nil {
+		for _, repo := range repos {
+			s.gitStore.RemoveRepo(repo.Host, repo.RepoOwner, repo.RepoName)
+		}
+	}
+
+	if err := s.dbStore.DeleteUser(ctx, targetID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete user"})
+		return
+	}
+
+	if s.docSrv != nil {
+		_ = s.docSrv.Reload(ctx)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
