@@ -526,3 +526,50 @@ footer { text-align: center; font-size: 0.8rem; color: var(--pico-muted-color); 
 .dashboard-page-header h1 {
   margin: 0;
 }
+
+/* ── Dashboard tables ── */
+
+.dashboard-table,
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 0.875rem;
+}
+
+.dashboard-table thead tr,
+.users-table thead tr {
+  background: #f8fafc;
+}
+
+.dashboard-table th,
+.users-table th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.dashboard-table td,
+.users-table td {
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #374151;
+  vertical-align: middle;
+}
+
+.dashboard-table tbody tr:last-child td,
+.users-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.dashboard-table tbody tr:hover td,
+.users-table tbody tr:hover td {
+  background: #fafafa;
+}
