@@ -1,6 +1,6 @@
 # Folio
 
-A lightweight documentation server that renders Markdown from public git repositories, inspired by Google's internal g3doc.
+A self-hosted, multi-user documentation server that renders Markdown from git repositories, inspired by Google's internal g3doc.
 
 **[→ Read the docs](docs/index.md)**
 
@@ -8,107 +8,69 @@ A lightweight documentation server that renders Markdown from public git reposit
 
 ```sh
 go install github.com/pxgray/folio/cmd/folio@latest
+folio serve
 ```
 
-Create `folio.toml`:
-
-```toml
-[server]
-addr = ":8080"
-
-[cache]
-dir = "~/.cache/folio"
-
-[[repos]]
-host  = "github.com"
-owner = "your-username"
-repo  = "your-repo"
-```
-
-Run:
-
-```sh
-folio folio.toml
-```
-
-Open `http://localhost:8080`.
+Open `http://localhost:8080`. You'll be redirected to the setup wizard to create your admin account and configure the server.
 
 ## Features
 
-- Bare-clone backed — reads directly from git object store, no working tree needed
-- Repo-as-site model — each configured repo acts as its own site
-- Auto-redirects repo root to the first Markdown file in navigation
-- Configurable root web artifacts (llms.txt, robots.txt, sitemap.xml) per repo and for the root site
-- `?ref=<sha-or-branch>` for historical views
-- Webhook-driven instant updates (GitHub, tangled.sh)
-- TTL fallback for repos without webhooks
-- Extension allowlist for raw file serving
-
-## Configuration
-
-### Web artifacts
-
-Each repo can serve standard root web artifacts. Configure the git path for each artifact:
-
-```toml
-[[repos]]
-host  = "github.com"
-owner = "myorg"
-repo  = "myproject"
-
-[repos.web_artifacts]
-"llms.txt"      = "docs/ai/llms.txt"
-"llms-full.txt" = "docs/ai/full.txt"
-"robots.txt"    = ""                    # explicitly disabled
-# sitemap.xml not configured → falls back to sitemap.xml in repo root
-```
-
-If an artifact key is absent, Folio looks for a file with the same name at the repo root. An empty string disables the artifact entirely.
-
-### Root site artifacts
-
-The root site (`/`) can serve artifacts from disk or inline content:
-
-```toml
-[root_artifacts]
-dir = "/etc/folio/root-artifacts"
-[root_artifacts.files]
-"robots.txt" = "User-agent: *\nDisallow: /"
-```
-
-Inline `files` entries take precedence over `dir`.
-
-### Raw file serving
-
-The `/-/raw/` route serves only files with safe extensions: images (`.png`, `.jpg`, `.gif`, `.webp`, `.svg`), fonts (`.woff`, `.woff2`), stylesheets (`.css`), documents (`.pdf`), data files (`.json`, `.xml`, `.yaml`, `.csv`), and media (`.mp4`, `.webm`, `.ogg`, `.mp3`, `.wav`). Paths starting with `.` or `_` are blocked. Responses are capped at 10 MB.
+- **Multi-user** — user accounts with email/password login and OAuth (GitHub, Google)
+- **Web dashboard** — add and manage repos through a browser UI; no config files to edit
+- **Git-native** — reads directly from bare clones, no working tree needed
+- **Repo-as-site** — each repo acts as its own site; the root redirects to the first Markdown file
+- **Webhook-driven freshness** — push to GitHub and Folio updates immediately
+- **TTL fallback** — optional background polling for repos without webhooks
+- **Historical views** — `?ref=<sha-or-branch>` on any URL
+- **Secure raw file serving** — extension allowlist, blocked prefixes, 10 MB cap
 
 ## URL structure
+
+Doc and raw routes:
 
 ```
 /{host}/{owner}/{repo}[/{path}][?ref=<ref>]
 /{host}/{owner}/{repo}/-/raw/{path}[?ref=<ref>]
-/{host}/{owner}/{repo}/llms.txt
-/{host}/{owner}/{repo}/robots.txt
-/{host}/{owner}/{repo}/sitemap.xml
-/{host}/{owner}/{repo}/llms-full.txt
+/{host}/{owner}/{repo}/-/webhook        (POST — push webhook)
 ```
 
-Root artifacts:
+Dashboard and auth (all under `/-/`):
 
 ```
-/llms.txt
-/robots.txt
-/sitemap.xml
-/llms-full.txt
+/-/setup                                 first-run setup wizard
+/-/auth/login                            login page
+/-/auth/github                           GitHub OAuth
+/-/auth/google                           Google OAuth
+/-/dashboard/                            repo list
+/-/dashboard/repos/new                   add a repo
+/-/dashboard/repos/{id}                  edit a repo
+/-/dashboard/settings                    user settings
+/-/dashboard/admin/                      admin: user list
+/-/dashboard/admin/settings              admin: system settings
+```
+
+REST API:
+
+```
+/-/api/v1/auth/login                     POST
+/-/api/v1/auth/logout                    POST
+/-/api/v1/auth/me                        GET
+/-/api/v1/repos                          GET, POST
+/-/api/v1/repos/{id}                     GET, PATCH, DELETE
+/-/api/v1/repos/{id}/sync                POST
+/-/api/v1/admin/users                    GET (admin)
+/-/api/v1/admin/users/{id}               PATCH, DELETE (admin)
+/-/api/v1/admin/settings                 GET, PATCH (admin)
 ```
 
 ## How it works
 
-1. On startup, Folio bare-clones each configured repo into `~/.cache/folio/`
-2. Each request reads the file directly from the git object store — no filesystem checkout needed
-3. Markdown is rendered with [goldmark](https://github.com/yuin/goldmark) (GFM-compatible)
-4. Relative links are rewritten to internal Folio URLs at render time
-5. When a webhook fires, Folio immediately fetches the latest commits and clears its ref cache
+1. On first run, Folio redirects to `/-/setup` to create the admin account
+2. Repos are added through `/-/dashboard/` — each is bare-cloned into the cache directory
+3. Each doc request reads the file directly from the git object store — no filesystem checkout
+4. Markdown is rendered with [goldmark](https://github.com/yuin/goldmark) (GFM-compatible)
+5. Relative links are rewritten to internal Folio URLs at render time
+6. When a webhook fires, Folio immediately fetches the latest commits and clears its ref cache
 
 ## License
 

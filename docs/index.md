@@ -3,18 +3,19 @@ toc: true
 ---
 # Folio
 
-Folio is a lightweight documentation server that renders Markdown files directly from public git repositories. Each configured repository acts as its own site, with configurable root web artifacts and auto-redirect to the first Markdown file.
+Folio is a self-hosted, multi-user documentation server that renders Markdown files directly from git repositories. Each registered repository acts as its own site, with automatic redirect to the first Markdown file.
 
 ## Features
 
-- **Git-native**: Reads files directly from bare clones — no working tree, no checkout
-- **Repo-as-site**: Each repo acts as its own site; visiting the repo root redirects to the first Markdown file
-- **Configurable web artifacts**: Serve `llms.txt`, `robots.txt`, `sitemap.xml`, and `llms-full.txt` per repo or for the root site
-- **Repo-relative links**: Links like `../api/reference.md` are automatically rewritten to internal Folio URLs
-- **Webhook-driven freshness**: Push to GitHub or tangled.sh and Folio updates immediately
-- **TTL fallback**: Optional background polling for repos without webhooks
-- **Historical views**: Add `?ref=<sha-or-branch>` to any URL to view any past state
-- **Secure raw file serving**: Extension allowlist, blocked prefixes, and size caps
+- **Multi-user**: user accounts with email/password login and OAuth (GitHub, Google); admin and regular roles
+- **Web dashboard**: add and manage repos through `/-/dashboard/` — no config files to edit
+- **Git-native**: reads files directly from bare clones — no working tree, no checkout
+- **Repo-as-site**: each repo acts as its own site; visiting the repo root redirects to the first Markdown file
+- **Repo-relative links**: links like `../api/reference.md` are automatically rewritten to internal Folio URLs
+- **Webhook-driven freshness**: push to GitHub and Folio updates immediately
+- **TTL fallback**: optional background polling for repos without webhooks
+- **Historical views**: add `?ref=<sha-or-branch>` to any URL to view any past state
+- **Secure raw file serving**: extension allowlist, blocked prefixes, and size caps
 
 ## Quick navigation
 
@@ -44,7 +45,7 @@ Raw (non-Markdown) files:
 /{host}/{owner}/{repo}/-/raw/{path}[?ref=<ref>]
 ```
 
-Web artifacts (per repo):
+Web artifacts (per repo, served from the repo root):
 
 ```
 /{host}/{owner}/{repo}/llms.txt
@@ -53,19 +54,11 @@ Web artifacts (per repo):
 /{host}/{owner}/{repo}/sitemap.xml
 ```
 
-Root site artifacts:
-
-```
-/llms.txt
-/llms-full.txt
-/robots.txt
-/sitemap.xml
-```
-
 ## How it works
 
-1. On startup, Folio bare-clones each configured repo into `~/.cache/folio/`
-2. Each request reads the file directly from the git object store — no filesystem checkout needed
-3. Markdown is rendered with [goldmark](https://github.com/yuin/goldmark) (GFM-compatible)
-4. Relative links are rewritten to internal Folio URLs at render time
-5. When a webhook fires, Folio immediately fetches the latest commits and clears its ref cache
+1. On first run, Folio redirects to `/-/setup` to create the first admin account
+2. Repos are added through the dashboard — Folio bare-clones them into the cache directory
+3. Each request reads the file directly from the git object store — no filesystem checkout needed
+4. Markdown is rendered with [goldmark](https://github.com/yuin/goldmark) (GFM-compatible)
+5. Relative links are rewritten to internal Folio URLs at render time
+6. When a webhook fires, Folio immediately fetches the latest commits and clears its ref cache

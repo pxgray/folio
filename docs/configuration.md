@@ -3,149 +3,92 @@ toc: true
 ---
 # Configuration reference
 
-Folio is configured via a [TOML](https://toml.io) file, typically named `folio.toml`.
+Folio stores all configuration in its SQLite database. There is no config file to edit — settings are managed through the admin dashboard at `/-/dashboard/admin/settings`.
 
-## `[server]`
+## System settings
 
-| Key    | Type   | Default  | Description                  |
-|--------|--------|----------|------------------------------|
-| `addr` | string | `:8080`  | TCP address to listen on     |
+These settings are available to admins at `/-/dashboard/admin/settings` and via the `/-/api/v1/admin/settings` API.
 
-```toml
-[server]
-addr = ":8080"
-```
-
-## `[cache]`
-
-| Key         | Type     | Default           | Description                                                                  |
-|-------------|----------|-------------------|------------------------------------------------------------------------------|
-| `dir`       | string   | `~/.cache/folio`  | Directory where bare git clones are stored. `~` is expanded.                 |
-| `stale_ttl` | duration | `5m`              | How long a resolved ref is cached before a background fetch is triggered. Set `"0"` to disable TTL-based polling entirely (webhooks only). |
-
-```toml
-[cache]
-dir       = "~/.cache/folio"
-stale_ttl = "5m"
-```
+| Key                          | Description                                                                              |
+|------------------------------|------------------------------------------------------------------------------------------|
+| `addr`                       | TCP address to listen on (e.g. `:8080`). **Requires restart.**                          |
+| `cache_dir`                  | Directory where bare git clones are stored. `~` is expanded. **Requires restart.**      |
+| `stale_ttl`                  | How long a resolved ref is cached before a background fetch is triggered (e.g. `5m`, `30s`, `0`). |
+| `base_url`                   | Public base URL (e.g. `https://folio.example.com`). Required for OAuth callbacks.       |
+| `oauth_github_client_id`     | GitHub OAuth app client ID.                                                              |
+| `oauth_github_client_secret` | GitHub OAuth app client secret.                                                          |
+| `oauth_google_client_id`     | Google OAuth client ID.                                                                  |
+| `oauth_google_client_secret` | Google OAuth client secret.                                                              |
 
 ### `stale_ttl` behaviour
 
-| Value        | Effect                                                         |
-|--------------|----------------------------------------------------------------|
-| `"5m"`       | Re-check remote HEAD every 5 minutes in the background        |
-| `"0"`        | Never poll; only webhooks invalidate the cache                 |
-| `"30s"`      | Aggressive polling — useful for active development setups      |
+| Value   | Effect                                                              |
+|---------|---------------------------------------------------------------------|
+| `5m`    | Re-check remote HEAD every 5 minutes in the background             |
+| `0`     | Never poll; only webhooks invalidate the cache                      |
+| `30s`   | Aggressive polling — useful for active development setups           |
 
-## `[[repos]]`
+Settings marked **Requires restart** take effect on the next server start.
 
-Each `[[repos]]` section registers one remote repository.
+## Per-repo settings
 
-| Key              | Type   | Required | Description                                                                              |
-|------------------|--------|----------|------------------------------------------------------------------------------------------|
-| `host`           | string | yes      | Git forge hostname, e.g. `github.com` or `tangled.sh`. Used in the URL: `/{host}/...`  |
-| `owner`          | string | yes      | Repository owner / organisation                                                          |
-| `repo`           | string | yes      | Repository name                                                                          |
-| `remote`         | string | no       | Clone URL. Defaults to `https://{host}/{owner}/{repo}.git`                              |
-| `webhook_secret` | string | no       | HMAC secret for webhook signature verification. Empty = no verification.                |
-| `trusted_html`   | bool   | no       | When `true`, raw HTML in Markdown passes through without sanitization.                   |
+Repos are managed per-user at `/-/dashboard/`. Each repo has:
 
-### `[repos.web_artifacts]`
+| Field             | Description                                                                              |
+|-------------------|------------------------------------------------------------------------------------------|
+| **Host**          | Git forge hostname, e.g. `github.com` or `tangled.sh`. Used in the URL: `/{host}/...`  |
+| **Owner**         | Repository owner / organisation                                                          |
+| **Repo name**     | Repository name                                                                          |
+| **Remote URL**    | Clone URL. Defaults to `https://{host}/{owner}/{repo}.git`                              |
+| **Webhook secret**| HMAC secret for webhook signature verification. Empty = no verification.                |
+| **Trusted HTML**  | When enabled, raw HTML in Markdown passes through without sanitization.                  |
 
-Each repo can serve standard root web artifacts (`llms.txt`, `llms-full.txt`, `robots.txt`, `sitemap.xml`). The `web_artifacts` table maps artifact filenames to their git paths within the repo.
+## OAuth setup
 
-| Key              | Type   | Description                                                                              |
-|------------------|--------|------------------------------------------------------------------------------------------|
-| `llms.txt`       | string | Git path for the `llms.txt` artifact. Empty string = disabled.                           |
-| `llms-full.txt`  | string | Git path for the `llms-full.txt` artifact. Empty string = disabled.                      |
-| `robots.txt`     | string | Git path for the `robots.txt` artifact. Empty string = disabled.                         |
-| `sitemap.xml`    | string | Git path for the `sitemap.xml` artifact. Empty string = disabled.                        |
+To enable GitHub or Google login, you need to create an OAuth app and save the credentials in admin settings.
 
-If an artifact key is absent from `web_artifacts`, Folio falls back to looking for a file with the same name at the repo root. An empty string explicitly disables the artifact (returns 404).
+### GitHub
 
-```toml
-[[repos]]
-host           = "github.com"
-owner          = "pxgray"
-repo           = "folio"
-webhook_secret = ""
+1. Go to GitHub → **Settings** → **Developer settings** → **OAuth Apps** → **New OAuth App**
+2. Set **Authorization callback URL** to: `{base_url}/-/auth/github/callback`
+3. Copy the **Client ID** and **Client secret** into Folio's admin settings
 
-[repos.web_artifacts]
-"llms.txt"      = "docs/ai/llms.txt"
-"llms-full.txt" = "docs/ai/full.txt"
-"robots.txt"    = ""
-# sitemap.xml not configured → falls back to sitemap.xml in repo root
+### Google
 
-[[repos]]
-host           = "tangled.sh"
-owner          = "alice"
-repo           = "notes"
-remote         = "https://tangled.sh/alice/notes.git"
-webhook_secret = "hunter2"
-# no web_artifacts → all artifacts fall back to repo root filenames
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services** → **Credentials** → **Create OAuth client ID**
+2. Application type: **Web application**
+3. Add `{base_url}/-/auth/google/callback` as an authorised redirect URI
+4. Copy the **Client ID** and **Client secret** into Folio's admin settings
+
+Set `base_url` in admin settings to the public URL of your Folio instance before configuring OAuth.
+
+## Database path
+
+The database path is set at startup only, not through the admin UI:
+
+```sh
+folio serve --db /var/lib/folio/folio.db
 ```
 
-## `[root_artifacts]`
+Or via environment variable:
 
-The root site (`/`) can serve web artifacts from disk or inline content. This is independent of any configured repo — it does not fall back to repo content.
-
-| Key         | Type              | Description                                                                              |
-|-------------|-------------------|------------------------------------------------------------------------------------------|
-| `dir`       | string            | Directory on disk containing artifact files.                                             |
-| `files`     | table (string)    | Inline content mapping: artifact filename → content string.                              |
-
-Inline `files` entries take precedence over `dir` for any given filename.
-
-```toml
-[root_artifacts]
-dir = "/etc/folio/root-artifacts"
-
-[root_artifacts.files]
-"robots.txt" = "User-agent: *\nDisallow: /"
+```sh
+FOLIO_DB=/var/lib/folio/folio.db folio serve
 ```
+
+Defaults to `folio.db` in the current directory.
 
 ## Raw file serving
 
 The `/-/raw/` route serves only files with safe extensions:
 
-| Category   | Extensions                                                                 |
-|------------|----------------------------------------------------------------------------|
-| Images     | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`, `.ico`, `.bmp`, `.tiff`, `.avif` |
-| Fonts      | `.woff`, `.woff2`, `.ttf`, `.eot`, `.otf`                                  |
-| Stylesheets| `.css`                                                                     |
-| Documents  | `.pdf`                                                                     |
-| Data files | `.json`, `.xml`, `.yaml`, `.yml`, `.csv`, `.tsv`                           |
-| Media      | `.mp4`, `.webm`, `.ogg`, `.mp3`, `.wav`                                    |
+| Category    | Extensions                                                                                   |
+|-------------|----------------------------------------------------------------------------------------------|
+| Images      | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`, `.ico`, `.bmp`, `.tiff`, `.avif`          |
+| Fonts       | `.woff`, `.woff2`, `.ttf`, `.eot`, `.otf`                                                   |
+| Stylesheets | `.css`                                                                                       |
+| Documents   | `.pdf`                                                                                       |
+| Data files  | `.json`, `.xml`, `.yaml`, `.yml`, `.csv`, `.tsv`                                             |
+| Media       | `.mp4`, `.webm`, `.ogg`, `.mp3`, `.wav`                                                      |
 
 Paths containing `..` or starting with `.` or `_` (at any path segment) are blocked. Responses are capped at 10 MB.
-
-## Full example
-
-```toml
-[server]
-addr = ":8080"
-
-[cache]
-dir       = "~/.cache/folio"
-stale_ttl = "5m"
-
-[root_artifacts]
-dir = "/etc/folio/root-artifacts"
-[root_artifacts.files]
-"robots.txt" = "User-agent: *\nDisallow: /"
-
-[[repos]]
-host           = "github.com"
-owner          = "pxgray"
-repo           = "folio"
-webhook_secret = "my-github-secret"
-
-[repos.web_artifacts]
-"llms.txt"      = "docs/ai/llms.txt"
-"llms-full.txt" = "docs/ai/full.txt"
-
-[[repos]]
-host  = "github.com"
-owner = "golang"
-repo  = "go"
-```

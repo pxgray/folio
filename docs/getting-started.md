@@ -6,7 +6,6 @@ toc: true
 ## Prerequisites
 
 - Go 1.22 or later
-- Git (for initial clone operations)
 - A public git repository on GitHub or [tangled.sh](https://tangled.sh)
 
 ## Install
@@ -23,43 +22,44 @@ cd folio
 go build ./cmd/folio/
 ```
 
-## Create a config file
-
-Create `folio.toml` in your working directory:
-
-```toml
-[server]
-addr = ":8080"
-
-[cache]
-dir       = "~/.cache/folio"
-stale_ttl = "5m"
-
-[[repos]]
-host  = "github.com"
-owner = "your-username"
-repo  = "your-repo"
-```
-
-See [configuration](configuration.md) for all available options.
-
 ## Run
 
 ```sh
-folio folio.toml
+folio serve
 ```
 
-Folio will clone the configured repos into `~/.cache/folio/` on first run (this may take a moment for large repos), then start serving on `:8080`.
+By default Folio stores its database in `folio.db` in the current directory. To use a different path:
 
-Open `http://localhost:8080` in your browser to see the repo list, or navigate directly to:
-
-```
-http://localhost:8080/github.com/your-username/your-repo/
+```sh
+folio serve --db /var/lib/folio/folio.db
 ```
 
-Visiting the repo root redirects you to the first Markdown file found in the navigation tree (from `folio.yml` or auto-generated from the directory structure).
+You can also set the path via the `FOLIO_DB` environment variable.
 
-## View a specific commit
+## First-run setup
+
+On first launch, open `http://localhost:8080` in your browser. Folio will redirect you to the setup wizard at `/-/setup`.
+
+Fill in:
+
+- **Your name** — display name for the admin account
+- **Email** — used to log in
+- **Password** — at least 8 characters
+- **Listen address** (optional) — defaults to `:8080`
+- **Cache directory** (optional) — where bare git clones are stored; defaults to `~/.cache/folio`
+
+After completing setup you'll be redirected to the login page.
+
+## Add a repository
+
+1. Log in at `/-/auth/login`
+2. Go to `/-/dashboard/` → **Add repo**
+3. Enter the host (e.g. `github.com`), owner, and repo name
+4. Click **Save** — Folio begins cloning in the background
+
+Once cloning completes, navigate to `http://localhost:8080/github.com/your-username/your-repo/` to see your docs.
+
+## View a specific commit or branch
 
 Append `?ref=` to any URL:
 
@@ -71,4 +71,4 @@ http://localhost:8080/github.com/your-username/your-repo/README.md?ref=abc1234
 ## Next steps
 
 - [Set up webhooks](webhooks.md) for instant updates on push
-- [Full configuration reference](configuration.md)
+- [Configuration reference](configuration.md) for all system settings

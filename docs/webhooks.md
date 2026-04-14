@@ -23,17 +23,11 @@ When this endpoint receives a valid push event, Folio immediately fetches the la
 openssl rand -hex 32
 ```
 
-Copy the output — you'll need it in both GitHub and your `folio.toml`.
+Copy the output — you'll need it in both GitHub and Folio's repo settings.
 
-### 2. Add the secret to folio.toml
+### 2. Add the secret to the repo settings
 
-```toml
-[[repos]]
-host           = "github.com"
-owner          = "your-username"
-repo           = "your-repo"
-webhook_secret = "paste-your-secret-here"
-```
+In Folio's dashboard, open the repo's edit page (`/-/dashboard/repos/{id}`) and paste the secret into the **Webhook secret** field.
 
 ### 3. Configure the webhook in GitHub
 
