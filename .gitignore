@@ -5,8 +5,8 @@ bin/
 # Local cache (bare clones)
 .cache/
 
-# Local config override (keep folio.toml as the example, ignore local secrets)
-folio.local.toml
+# Local config override
+folio.db
 
 # Go test cache / coverage
 *.test
