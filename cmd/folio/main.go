@@ -97,24 +97,27 @@ func main() {
 
 		gitStore = gitstore.New(cacheDir, staleTTL)
 
-		// Hydrate gitstore from DB.
+		// Hydrate gitstore from DB, updating status based on open/clone result.
 		repos, err := store.ListAllRepos(ctx)
 		if err != nil {
 			log.Fatalf("folio: list repos: %v", err)
 		}
-		entries := make([]gitstore.RepoEntry, 0, len(repos))
 		for _, r := range repos {
-			if r.Status == db.RepoStatusReady || r.Status == db.RepoStatusPending {
-				entries = append(entries, gitstore.RepoEntry{
-					Host:      r.Host,
-					Owner:     r.RepoOwner,
-					Name:      r.RepoName,
-					RemoteURL: r.RemoteURL,
-				})
+			if r.Status != db.RepoStatusReady && r.Status != db.RepoStatusPending {
+				continue
 			}
-		}
-		if err := gitStore.EnsureRepos(ctx, entries); err != nil {
-			log.Printf("folio: EnsureRepos: %v", err)
+			entry := gitstore.RepoEntry{
+				Host:      r.Host,
+				Owner:     r.RepoOwner,
+				Name:      r.RepoName,
+				RemoteURL: r.RemoteURL,
+			}
+			if err := gitStore.AddRepo(ctx, entry); err != nil {
+				log.Printf("folio: AddRepo %s/%s/%s: %v", r.Host, r.RepoOwner, r.RepoName, err)
+				_ = store.UpdateRepoStatus(ctx, r.ID, db.RepoStatusError, err.Error())
+			} else if r.Status != db.RepoStatusReady {
+				_ = store.UpdateRepoStatus(ctx, r.ID, db.RepoStatusReady, "")
+			}
 		}
 
 		docSrv, err = web.New(store, gitStore, assets.TemplateFS, staticFS)
@@ -127,8 +130,14 @@ func main() {
 	dashSrv := dashboard.New(store, gitStore, authn, docSrv, assets.TemplateFS, setupComplete)
 	dashHandler := dashSrv.Handler()
 
+	staticHandler := http.StripPrefix("/-/static/", http.FileServer(http.FS(staticFS)))
+
 	combined := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
+		if strings.HasPrefix(p, "/-/static/") {
+			staticHandler.ServeHTTP(w, r)
+			return
+		}
 		if strings.HasPrefix(p, "/-/setup") ||
 			strings.HasPrefix(p, "/-/auth") ||
 			strings.HasPrefix(p, "/-/dashboard") ||

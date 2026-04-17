@@ -117,6 +117,8 @@ func (s *Server) handleRepoCreate(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Printf("background clone failed for %s/%s/%s: %v", host, owner, repoName, err)
 				_ = s.dbStore.UpdateRepoStatus(context.Background(), repo.ID, db.RepoStatusError, err.Error())
+			} else {
+				_ = s.dbStore.UpdateRepoStatus(context.Background(), repo.ID, db.RepoStatusReady, "")
 			}
 		}()
 	}

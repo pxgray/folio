@@ -80,7 +80,7 @@ body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
 }
 
 /* ── Page body ── */
-.page-body { display: flex; flex: 1; align-items: flex-start; max-width: 1200px; width: 100%; margin: 0 auto; }
+.page-body { display: flex; flex: 1; align-items: flex-start; max-width: 1600px; width: 100%; margin: 0 auto; }
 
 /* ── Sidebar ──
    PicoCSS sets nav→flex, nav ul→flex-row with -9px margins, nav li→inline-block.
@@ -593,6 +593,61 @@ footer { text-align: center; font-size: 0.8rem; color: var(--pico-muted-color); 
 .dashboard-table tbody tr:hover td,
 .users-table tbody tr:hover td {
   background: #fafafa;
+}
+
+/* ── Dashboard row actions (icon buttons) ── */
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+/* Make each form a tight inline-flex wrapper so buttons sit in the flex row */
+.row-actions form {
+  display: inline-flex;
+  margin: 0;
+  padding: 0;
+}
+/* .row-actions .btn-icon has specificity (0,2,0), beating PicoCSS
+   button[type=submit]{width:100%} at (0,1,1) */
+.row-actions .btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  font-size: 1rem;
+  color: #64748b;
+  text-decoration: none;
+  line-height: 1;
+  box-shadow: none;
+  outline: none;
+  transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+.row-actions .btn-icon:hover {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #334155;
+  text-decoration: none;
+  box-shadow: none;
+}
+.row-actions .btn-icon.btn-icon-danger:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+.row-actions .btn-icon:focus,
+.row-actions .btn-icon:focus-visible,
+.row-actions .btn-icon:active {
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 /* ── Dashboard badge variants ── */
