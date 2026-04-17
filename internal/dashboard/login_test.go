@@ -83,6 +83,90 @@ func TestGitHubOAuthNotConfigured(t *testing.T) {
 	}
 }
 
+func TestFormLogin_ValidCreds(t *testing.T) {
+	ts, store := newTestDashboard(t)
+	ctx := context.Background()
+
+	// Create a user via setup flow so there's someone to log in as.
+	_, err := http.PostForm(ts.URL+"/-/setup", map[string][]string{
+		"name":     {"Alice Admin"},
+		"email":    {"alice@example.com"},
+		"password": {"securepass1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = store // already created via PostForm
+	_ = ctx
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.PostForm(ts.URL+"/-/auth/login", map[string][]string{
+		"email":    {"alice@example.com"},
+		"password": {"securepass1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("want 302, got %d", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); loc != "/-/dashboard/" {
+		t.Fatalf("want Location /-/dashboard/, got %q", loc)
+	}
+	// Session cookie must be set.
+	found := false
+	for _, c := range resp.Cookies() {
+		if c.Name == "session" && c.Value != "" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected session cookie in response")
+	}
+}
+
+func TestFormLogin_BadPassword(t *testing.T) {
+	ts, _ := newTestDashboard(t)
+
+	_, err := http.PostForm(ts.URL+"/-/setup", map[string][]string{
+		"name":     {"Alice Admin"},
+		"email":    {"alice@example.com"},
+		"password": {"securepass1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.PostForm(ts.URL+"/-/auth/login", map[string][]string{
+		"email":    {"alice@example.com"},
+		"password": {"wrongpassword"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("want 303, got %d", resp.StatusCode)
+	}
+	loc := resp.Header.Get("Location")
+	if !strings.Contains(loc, "error=invalid_credentials") {
+		t.Errorf("want Location with error=invalid_credentials, got %q", loc)
+	}
+}
+
 func TestLoginPageGet(t *testing.T) {
 	ts, _ := newTestDashboard(t)
 
@@ -105,7 +189,7 @@ func TestLoginPageGet(t *testing.T) {
 	if !strings.Contains(bodyStr, "<form") {
 		t.Error("expected response body to contain <form")
 	}
-	if !strings.Contains(bodyStr, "/-/api/v1/auth/login") {
-		t.Error("expected response body to contain /-/api/v1/auth/login")
+	if !strings.Contains(bodyStr, "/-/auth/login") {
+		t.Error("expected response body to contain /-/auth/login")
 	}
 }

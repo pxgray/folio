@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/pxgray/folio/internal/auth"
 	"github.com/pxgray/folio/internal/db"
@@ -15,6 +16,26 @@ import (
 func (s *Server) handleLoginGet(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{"Title": "Sign in", "Error": r.URL.Query().Get("error")}
 	s.loginTmpl.Execute(w, data)
+}
+
+// handleFormLogin handles POST /-/auth/login from the HTML login form.
+// It authenticates with email/password, sets a session cookie, and redirects to the dashboard.
+func (s *Server) handleFormLogin(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	email := strings.TrimSpace(r.FormValue("email"))
+	password := r.FormValue("password")
+
+	ctx := r.Context()
+	user, err := s.dbStore.GetUserByEmail(ctx, email)
+	if err != nil || !auth.CheckPassword(user.Password, password) {
+		http.Redirect(w, r, "/-/auth/login?error=invalid_credentials", http.StatusSeeOther)
+		return
+	}
+
+	s.createSessionAndRedirect(w, r, user.ID)
 }
 
 // handleFormLogout clears the session cookie, deletes the session from the database,

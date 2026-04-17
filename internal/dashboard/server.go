@@ -63,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/", s.handleSetupPost)
 	})
 	r.Get("/-/auth/login", s.handleLoginGet)
+	r.Post("/-/auth/login", s.handleFormLogin)
 	r.Post("/-/auth/logout", s.handleFormLogout)
 	r.Get("/-/auth/github", s.handleGitHubOAuth)
 	r.Get("/-/auth/github/callback", s.handleGitHubCallback)

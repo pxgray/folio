@@ -78,8 +78,8 @@ func TestSetupGet_AlreadyComplete_RedirectsToRoot(t *testing.T) {
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("want 303, got %d", resp.StatusCode)
 	}
-	if loc := resp.Header.Get("Location"); loc != "/" {
-		t.Fatalf("want Location /, got %q", loc)
+	if loc := resp.Header.Get("Location"); loc != "/-/dashboard/" {
+		t.Fatalf("want Location /-/dashboard/, got %q", loc)
 	}
 }
 
