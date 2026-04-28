@@ -10,28 +10,31 @@ import (
 )
 
 type adminUsersData struct {
-	Title   string
-	IsAdmin bool
-	Flash   string
-	User    *db.User   // current admin (for self-identification in the template)
-	Users   []*db.User // all users
+	Title     string
+	IsAdmin   bool
+	Flash     string
+	User      *db.User   // current admin (for self-identification in the template)
+	Users     []*db.User // all users
+	CSRFToken string
 }
 
 type adminUserEditData struct {
-	Title   string
-	IsAdmin bool
-	Flash   string
-	User    *db.User // current admin (for self-edit check)
-	Target  *db.User // user being edited
-	Error   string
+	Title     string
+	IsAdmin   bool
+	Flash     string
+	User      *db.User // current admin (for self-edit check)
+	Target    *db.User // user being edited
+	Error     string
+	CSRFToken string
 }
 
 type adminSettingsData struct {
-	Title    string
-	IsAdmin  bool
-	Flash    string
-	User     *db.User
-	Settings map[string]string
+	Title     string
+	IsAdmin   bool
+	Flash     string
+	User      *db.User
+	Settings  map[string]string
+	CSRFToken string
 }
 
 // handleAdminUserEditPage handles GET /-/dashboard/admin/users/{id}.
@@ -51,11 +54,12 @@ func (s *Server) handleAdminUserEditPage(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	data := adminUserEditData{
-		Title:   "Admin — Edit User",
-		IsAdmin: true,
-		Flash:   getFlash(w, r),
-		User:    currentUser,
-		Target:  target,
+		Title:     "Admin — Edit User",
+		IsAdmin:   true,
+		Flash:     getFlash(w, r),
+		User:      currentUser,
+		Target:    target,
+		CSRFToken: csrfTokenFromContext(r),
 	}
 	s.renderTemplate(w, "dashboard_admin_user_edit.html", data)
 }
@@ -72,6 +76,13 @@ func (s *Server) handleAdminUserEditPost(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	target, err := s.dbStore.GetUserByID(ctx, targetID)
+	if err != nil {
+		http.Error(w, "user not found", http.StatusNotFound)
+		return
+	}
+
+	// Reload to get a fresh copy (prevents concurrent mutation race).
+	target, err = s.dbStore.GetUserByID(ctx, targetID)
 	if err != nil {
 		http.Error(w, "user not found", http.StatusNotFound)
 		return
@@ -102,11 +113,12 @@ func (s *Server) handleAdminUserEditPost(w http.ResponseWriter, r *http.Request)
 
 	if err := s.dbStore.UpdateUser(ctx, target, pwHash); err != nil {
 		data := adminUserEditData{
-			Title:   "Admin — Edit User",
-			IsAdmin: true,
-			User:    currentUser,
-			Target:  target,
-			Error:   "Failed to save: " + err.Error(),
+			Title:     "Admin — Edit User",
+			IsAdmin:   true,
+			User:      currentUser,
+			Target:    target,
+			Error:     "Failed to save: " + err.Error(),
+			CSRFToken: csrfTokenFromContext(r),
 		}
 		s.renderTemplate(w, "dashboard_admin_user_edit.html", data)
 		return
@@ -208,11 +220,12 @@ func (s *Server) handleAdminSettingsPage(w http.ResponseWriter, r *http.Request)
 		settings[key] = val
 	}
 	data := adminSettingsData{
-		Title:    "Admin — Settings",
-		IsAdmin:  true,
-		Flash:    getFlash(w, r),
-		User:     currentUser,
-		Settings: settings,
+		Title:     "Admin — Settings",
+		IsAdmin:   true,
+		Flash:     getFlash(w, r),
+		User:      currentUser,
+		Settings:  settings,
+		CSRFToken: csrfTokenFromContext(r),
 	}
 	s.renderTemplate(w, "dashboard_admin_settings.html", data)
 }
@@ -244,11 +257,12 @@ func (s *Server) handleAdminUsersPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := adminUsersData{
-		Title:   "Admin — Users",
-		IsAdmin: true,
-		Flash:   getFlash(w, r),
-		User:    currentUser,
-		Users:   users,
+		Title:     "Admin — Users",
+		IsAdmin:   true,
+		Flash:     getFlash(w, r),
+		User:      currentUser,
+		Users:     users,
+		CSRFToken: csrfTokenFromContext(r),
 	}
 	s.renderTemplate(w, "dashboard_admin_users.html", data)
 }

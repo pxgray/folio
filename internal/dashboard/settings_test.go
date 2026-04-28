@@ -2,10 +2,12 @@ package dashboard_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/pxgray/folio/internal/auth"
@@ -49,13 +51,7 @@ func TestDashboardSettings_POST_UpdateName(t *testing.T) {
 		"display_name": {"Alice"},
 	}
 
-	req, err := http.NewRequest(http.MethodPost, ts.URL+"/-/dashboard/settings",
-		strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(newSessionCookie(t, store, user.ID))
+	req := newCSRFPost(t, ts.URL+"/-/dashboard/settings", form, store, user.ID)
 
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -95,13 +91,7 @@ func TestDashboardSettings_POST_WrongCurrentPassword(t *testing.T) {
 		"new_password":     {"newpassword123"},
 	}
 
-	req, err := http.NewRequest(http.MethodPost, ts.URL+"/-/dashboard/settings",
-		strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(newSessionCookie(t, store, user.ID))
+	req := newCSRFPost(t, ts.URL+"/-/dashboard/settings", form, store, user.ID)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -130,13 +120,7 @@ func TestDashboardSettings_POST_ChangePassword_Valid(t *testing.T) {
 		"new_password":     {"newpassword123"},
 	}
 
-	req, err := http.NewRequest(http.MethodPost, ts.URL+"/-/dashboard/settings",
-		strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(newSessionCookie(t, store, user.ID))
+	req := newCSRFPost(t, ts.URL+"/-/dashboard/settings", form, store, user.ID)
 
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -181,11 +165,7 @@ func TestDashboardSettings_UnlinkOAuth(t *testing.T) {
 		t.Fatalf("CreateOAuthAccount: %v", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, ts.URL+"/-/dashboard/settings/unlink/github", nil)
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	req.AddCookie(newSessionCookie(t, store, user.ID))
+	req := newCSRFPost(t, ts.URL+"/-/dashboard/settings/unlink/github", url.Values{}, store, user.ID)
 
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -214,5 +194,78 @@ func TestDashboardSettings_UnlinkOAuth(t *testing.T) {
 	}
 	if len(accounts) != 0 {
 		t.Errorf("expected 0 OAuth accounts after unlink, got %d", len(accounts))
+	}
+}
+
+func TestDashboardSettings_POST_ConcurrentNameUpdates_NoRace(t *testing.T) {
+	ts, store, user := newDashboardTestServer(t)
+	ctx := context.Background()
+
+	// Create a single session shared across concurrent requests.
+	authn := auth.New(store)
+	sess, err := authn.NewSession(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var errors []error
+	numGoroutines := 20
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			form := url.Values{"display_name": {fmt.Sprintf("User%d", idx)}, "_csrf": {sess.CSRFToken}}
+			req, err := http.NewRequest(http.MethodPost, ts.URL+"/-/dashboard/settings",
+				strings.NewReader(form.Encode()))
+			if err != nil {
+				mu.Lock()
+				errors = append(errors, err)
+				mu.Unlock()
+				return
+			}
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.AddCookie(&http.Cookie{Name: "session", Value: sess.Token})
+			req.AddCookie(&http.Cookie{Name: "_csrf", Value: sess.CSRFToken})
+
+			resp, err := client.Do(req)
+			if err != nil {
+				mu.Lock()
+				errors = append(errors, err)
+				mu.Unlock()
+				return
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusSeeOther {
+				mu.Lock()
+				errors = append(errors,
+					fmt.Errorf("goroutine %d: want 303, got %d", idx, resp.StatusCode))
+				mu.Unlock()
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	if len(errors) > 0 {
+		for _, e := range errors {
+			t.Error(e)
+		}
+	}
+
+	// Verify DB was updated at least once (at least one name change persisted).
+	updated, err := store.GetUserByID(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+	if updated.Name == "Test User" {
+		t.Errorf("expected name to be updated by at least one goroutine, got %q", updated.Name)
 	}
 }

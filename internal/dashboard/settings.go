@@ -16,6 +16,7 @@ type settingsData struct {
 	User        *db.User
 	LinkedOAuth []string // provider names, e.g. ["github"]
 	Error       string
+	CSRFToken   string
 }
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
@@ -27,11 +28,17 @@ func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
 		IsAdmin:     user.IsAdmin,
 		User:        user,
 		LinkedOAuth: linked,
+		CSRFToken:   csrfTokenFromContext(r),
 	})
 }
 
 func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
+	ctxUser := auth.UserFromContext(r.Context())
+	user, err := s.dbStore.GetUserByID(r.Context(), ctxUser.ID)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -92,6 +99,7 @@ func (s *Server) renderSettingsError(w http.ResponseWriter, r *http.Request, use
 		User:        user,
 		LinkedOAuth: linked,
 		Error:       msg,
+		CSRFToken:   csrfTokenFromContext(r),
 	})
 }
 
