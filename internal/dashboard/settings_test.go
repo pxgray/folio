@@ -197,6 +197,38 @@ func TestDashboardSettings_UnlinkOAuth(t *testing.T) {
 	}
 }
 
+func TestRenderSettingsError_ContentType(t *testing.T) {
+	ts, store, user := newDashboardTestServer(t)
+
+	form := url.Values{
+		"current_password": {"wrong"},
+		"new_password":     {"short"},
+	}
+
+	req := newCSRFPost(t, ts.URL+"/-/dashboard/settings", form, store, user.ID)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /-/dashboard/settings: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422, got %d", resp.StatusCode)
+	}
+
+	ct := resp.Header.Get("Content-Type")
+	if ct != "text/html; charset=utf-8" {
+		t.Errorf("want Content-Type %q, got %q", "text/html; charset=utf-8", ct)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	if !strings.Contains(bodyStr, "password") {
+		t.Errorf("expected error message in body, got:\n%s", bodyStr)
+	}
+}
+
 func TestDashboardSettings_POST_ConcurrentNameUpdates_NoRace(t *testing.T) {
 	ts, store, user := newDashboardTestServer(t)
 	ctx := context.Background()

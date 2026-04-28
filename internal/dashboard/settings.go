@@ -92,6 +92,7 @@ func (s *Server) handleOAuthUnlink(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) renderSettingsError(w http.ResponseWriter, r *http.Request, user *db.User, msg string) {
 	linked := s.linkedProviders(r, user.ID)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusUnprocessableEntity)
 	s.renderTemplate(w, "dashboard_settings.html", settingsData{
 		Title:       "Settings",

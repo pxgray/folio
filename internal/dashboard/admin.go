@@ -104,6 +104,18 @@ func (s *Server) handleAdminUserEditPost(w http.ResponseWriter, r *http.Request)
 
 	var pwHash *string
 	if pw := r.FormValue("password"); pw != "" {
+		if len(pw) < 8 {
+			data := adminUserEditData{
+				Title:     "Admin — Edit User",
+				IsAdmin:   true,
+				User:      currentUser,
+				Target:    target,
+				Error:     "Password must be at least 8 characters.",
+				CSRFToken: csrfTokenFromContext(r),
+			}
+			s.renderTemplate(w, "dashboard_admin_user_edit.html", data)
+			return
+		}
 		hashed, err := auth.HashPassword(pw)
 		if err != nil {
 			http.Error(w, "failed to hash password", http.StatusInternalServerError)
@@ -245,8 +257,9 @@ func (s *Server) handleAdminSettingsPost(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	for _, key := range knownSettings {
-		val := r.FormValue(key)
-		s.dbStore.UpsertSetting(ctx, key, val)
+		if val := r.FormValue(key); val != "" {
+			s.dbStore.UpsertSetting(ctx, key, val)
+		}
 	}
 	setFlash(w, "Settings saved.")
 	http.Redirect(w, r, "/-/dashboard/admin/settings", http.StatusSeeOther)
