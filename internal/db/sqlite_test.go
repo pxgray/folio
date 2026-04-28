@@ -31,7 +31,7 @@ func TestUserCRUD(t *testing.T) {
 	s := openTestDB(t)
 
 	// CreateUser sets ID
-	u := &db.User{Email: "alice@example.com", Name: "Alice", IsAdmin: true}
+	u := &db.User{Email: "alice@example.com", Name: "Alice", Password: "existing-hashed-password", IsAdmin: true}
 	if err := s.CreateUser(ctx, u); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
@@ -58,6 +58,7 @@ func TestUserCRUD(t *testing.T) {
 	}
 
 	// UpdateUser without password preserves existing password
+	u.Password = "existing-hashed-password"
 	u.Name = "Alice Updated"
 	if err := s.UpdateUser(ctx, u, nil); err != nil {
 		t.Fatalf("UpdateUser nil password: %v", err)
@@ -66,8 +67,8 @@ func TestUserCRUD(t *testing.T) {
 	if got3.Name != "Alice Updated" {
 		t.Errorf("UpdateUser did not persist name: %q", got3.Name)
 	}
-	if got3.Password != "" {
-		t.Errorf("expected empty password after nil update, got %q", got3.Password)
+	if got3.Password != "existing-hashed-password" {
+		t.Errorf("UpdateUser(nil) changed password: expected %q, got %q", "existing-hashed-password", got3.Password)
 	}
 
 	// UpdateUser with password updates it
