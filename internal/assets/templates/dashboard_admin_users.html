@@ -32,23 +32,23 @@
         </td>
         <td>{{.CreatedAt.Format "2006-01-02"}}</td>
         <td>
-          <a href="/-/dashboard/admin/users/{{.ID}}">Edit</a>
-          &nbsp;
-          <form method="POST" action="/-/dashboard/admin/users/{{.ID}}/toggle-admin" style="display:inline">
-            {{if .IsAdmin}}
-            <button type="submit">Demote</button>
+          <div class="row-actions">
+            <a href="/-/dashboard/admin/users/{{.ID}}" class="btn">Edit</a>
+            <form method="POST" action="/-/dashboard/admin/users/{{.ID}}/toggle-admin">
+              {{if .IsAdmin}}
+              <button type="submit" class="btn">Demote</button>
+              {{else}}
+              <button type="submit" class="btn">Promote</button>
+              {{end}}
+            </form>
+            {{if eq .ID $.User.ID}}
+            <button type="button" class="btn btn-danger" disabled title="Cannot delete your own account">Delete</button>
             {{else}}
-            <button type="submit">Promote</button>
+            <form method="POST" action="/-/dashboard/admin/users/{{.ID}}/delete">
+              <button type="submit" class="btn btn-danger" onclick="return confirm('Delete this user?')">Delete</button>
+            </form>
             {{end}}
-          </form>
-          &nbsp;
-          {{if eq .ID $.User.ID}}
-          <button disabled title="Cannot delete your own account">Delete</button>
-          {{else}}
-          <form method="POST" action="/-/dashboard/admin/users/{{.ID}}/delete" style="display:inline">
-            <button type="submit">Delete</button>
-          </form>
-          {{end}}
+          </div>
         </td>
       </tr>
       {{end}}
