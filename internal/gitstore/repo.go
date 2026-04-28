@@ -284,3 +284,9 @@ func (r *Repo) invalidateHeadCache() {
 	r.headCache = make(map[string]headEntry)
 	r.headMu.Unlock()
 }
+
+// Close releases resources held by the repo.
+// No-op for go-git v5.12.0 (no underlying Close on *git.Repository).
+func (r *Repo) Close() error {
+	return nil
+}

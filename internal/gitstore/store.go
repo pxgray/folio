@@ -61,13 +61,16 @@ type LocalEntry struct {
 func (s *Store) AddRepo(ctx context.Context, e RepoEntry) error {
 	key := e.key()
 
+	// Fast path: check if already registered (read lock only).
 	s.mu.RLock()
-	_, exists := s.repos[key]
-	s.mu.RUnlock()
-	if exists {
+	if repo, ok := s.repos[key]; ok {
+		s.mu.RUnlock()
+		repo.triggerBackgroundFetch(ctx)
 		return nil
 	}
+	s.mu.RUnlock()
 
+	// Slow path: clone/open outside the lock.
 	staleTTL := e.StaleTTL
 	if staleTTL == 0 {
 		staleTTL = s.defaultStaleTTL
@@ -90,12 +93,25 @@ func (s *Store) AddRepo(ctx context.Context, e RepoEntry) error {
 		if err := repo.open(); err != nil {
 			return fmt.Errorf("open %s: %w", key, err)
 		}
-		go repo.triggerBackgroundFetch(context.Background())
 	}
 
+	// Insert into map before spawning goroutine (double-check after acquiring write lock).
 	s.mu.Lock()
+	if existing, ok := s.repos[key]; ok {
+		s.mu.Unlock()
+		repo.Close()
+		existing.triggerBackgroundFetch(ctx)
+		return nil
+	}
 	s.repos[key] = repo
 	s.mu.Unlock()
+
+	// Now safe to spawn: repo is in the map.
+	if _, err := os.Stat(localDir); errors.Is(err, os.ErrNotExist) {
+		// Fresh clone — no background fetch needed.
+		return nil
+	}
+	repo.triggerBackgroundFetch(ctx)
 	return nil
 }
 

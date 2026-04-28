@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -196,6 +197,92 @@ func TestRemoveRepo_RemovesKey(t *testing.T) {
 	_, err = s.Get("example.com", "testuser", "docs")
 	if !errors.Is(err, gitstore.ErrNotRegistered) {
 		t.Errorf("expected ErrNotRegistered after RemoveRepo, got %v", err)
+	}
+}
+
+func TestAddRepo_ConcurrentSameKey(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	cacheDir := t.TempDir()
+
+	s := gitstore.New(cacheDir, 5*time.Minute)
+	entry := gitstore.RepoEntry{
+		Host: "example.com", Owner: "testuser", Name: "docs",
+		RemoteURL: "file://" + bareDir,
+	}
+
+	// Pre-populate the cache so all goroutines take the "open" path.
+	// This tests the double-checked locking race, not the clone path.
+	if err := s.AddRepo(t.Context(), entry); err != nil {
+		t.Fatalf("pre-populate: %v", err)
+	}
+
+	const goroutines = 20
+	var wg sync.WaitGroup
+	errCh := make(chan error, goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errCh <- s.AddRepo(t.Context(), entry)
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("AddRepo error: %v", err)
+		}
+	}
+
+	entries := s.RepoEntries()
+	if len(entries) != 1 {
+		t.Errorf("expected 1 repo, got %d", len(entries))
+	}
+
+	repo, err := s.Get("example.com", "testuser", "docs")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if repo == nil {
+		t.Fatal("expected non-nil repo")
+	}
+}
+
+func TestAddRepo_ConcurrentSameKey_GetAfterInsert(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	s := gitstore.New(t.TempDir(), 5*time.Minute)
+	entry := gitstore.RepoEntry{
+		Host: "example.com", Owner: "testuser", Name: "docs",
+		RemoteURL: "file://" + bareDir,
+	}
+
+	const goroutines = 50
+	var wg sync.WaitGroup
+
+	// 25 goroutines calling AddRepo, 25 calling Get concurrently.
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = s.AddRepo(t.Context(), entry)
+		}()
+	}
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = s.Get("example.com", "testuser", "docs")
+		}()
+	}
+
+	wg.Wait()
+
+	entries := s.RepoEntries()
+	if len(entries) != 1 {
+		t.Errorf("expected 1 repo, got %d", len(entries))
 	}
 }
 
