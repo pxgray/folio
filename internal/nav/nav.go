@@ -119,14 +119,18 @@ func FindActiveSection(sections []Section, filePath string) (Section, int, bool)
 	return Section{}, -1, false
 }
 
-// navCoversPath checks if any nav item's path matches or is a descendant of the given path.
+// navCoversPath checks if any nav item's path matches, is a parent directory of,
+// or is a sibling directory of the given file path.
 func navCoversPath(items []Item, filePath string) bool {
 	for _, item := range items {
 		if item.Path != "" {
 			if item.Path == filePath {
 				return true
 			}
-			if filePath != "" && strings.HasPrefix(item.Path, filePath+"/") {
+			if filePath != "" && strings.HasPrefix(filePath, item.Path+"/") {
+				return true
+			}
+			if filePath != "" && strings.Count(path.Dir(item.Path), "/") > 0 && strings.HasPrefix(filePath, path.Dir(item.Path)+"/") {
 				return true
 			}
 		}
