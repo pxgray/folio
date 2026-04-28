@@ -57,41 +57,32 @@ func New(dbStore db.Store, gitStore *gitstore.Store, tmplFS embed.FS, staticFS f
 		return nil, fmt.Errorf("parse index template: %w", err)
 	}
 
-	ctx := context.Background()
-	allRepos, err := dbStore.ListAllRepos(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("web.New: list repos: %w", err)
+	s := &Server{
+		store:            gitStore,
+		dbStore:          dbStore,
+		docTmpl:          docTmpl,
+		indexTmpl:        indexTmpl,
+		staticFS:         staticFS,
+		webhookLimiter:   make(map[string]time.Time),
 	}
 
-	repoTrusted := make(map[string]bool, len(allRepos))
-	repoSecrets := make(map[string]string, len(allRepos))
-	repoArtifacts := make(map[string]repoArtifactConfig, len(allRepos))
-	for _, r := range allRepos {
-		key := r.Host + "/" + r.RepoOwner + "/" + r.RepoName
-		repoTrusted[key] = r.TrustedHTML
-		repoSecrets[key] = r.WebhookSecret
-		repoArtifacts[key] = repoArtifactConfig{artifacts: nil}
+	if err := s.reloadConfig(context.Background()); err != nil {
+		return nil, err
 	}
 
-	return &Server{
-		store:              gitStore,
-		dbStore:            dbStore,
-		docTmpl:            docTmpl,
-		indexTmpl:          indexTmpl,
-		staticFS:           staticFS,
-		repoTrusted:        repoTrusted,
-		repoSecrets:        repoSecrets,
-		repoArtifactConfig: repoArtifacts,
-		webhookLimiter:     make(map[string]time.Time),
-	}, nil
+	return s, nil
 }
 
 // Reload re-queries dbStore for all repos and atomically updates the cached maps.
 // Safe to call concurrently with in-flight requests.
 func (s *Server) Reload(ctx context.Context) error {
+	return s.reloadConfig(ctx)
+}
+
+func (s *Server) reloadConfig(ctx context.Context) error {
 	allRepos, err := s.dbStore.ListAllRepos(ctx)
 	if err != nil {
-		return fmt.Errorf("Reload: list repos: %w", err)
+		return fmt.Errorf("reloadConfig: list repos: %w", err)
 	}
 
 	repoTrusted := make(map[string]bool, len(allRepos))
@@ -101,7 +92,14 @@ func (s *Server) Reload(ctx context.Context) error {
 		key := r.Host + "/" + r.RepoOwner + "/" + r.RepoName
 		repoTrusted[key] = r.TrustedHTML
 		repoSecrets[key] = r.WebhookSecret
-		repoArtifacts[key] = repoArtifactConfig{artifacts: nil}
+		artifacts, err := s.dbStore.GetRepoArtifacts(ctx, r.ID)
+		if err != nil {
+			artifacts = nil
+		}
+		repoArtifacts[key] = repoArtifactConfig{artifacts: artifacts}
+		if r.StaleTTLSecs > 0 {
+			s.store.SetRepoStaleTTL(r.Host, r.RepoOwner, r.RepoName, time.Duration(r.StaleTTLSecs)*time.Second)
+		}
 	}
 
 	s.mu.Lock()

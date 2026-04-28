@@ -56,6 +56,11 @@ func (r *Repo) CloneURL() string {
 	return r.cloneURL
 }
 
+// SetStaleTTL updates the stale TTL for this repo.
+func (r *Repo) SetStaleTTL(ttl time.Duration) {
+	r.staleTTL = ttl
+}
+
 // open opens an already-cloned bare repo from disk.
 func (r *Repo) open() error {
 	repo, err := git.PlainOpen(r.localDir)

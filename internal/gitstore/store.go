@@ -19,6 +19,7 @@ type Store struct {
 	mu              sync.RWMutex // protects repos map
 	repos           map[string]*Repo
 	locals          map[string]*LocalRepo
+	perRepoStaleTTL map[string]time.Duration
 }
 
 // New creates a Store. Call EnsureRepos (or AddRepo) before serving.
@@ -28,6 +29,7 @@ func New(cacheDir string, defaultStaleTTL time.Duration) *Store {
 		defaultStaleTTL: defaultStaleTTL,
 		repos:           make(map[string]*Repo),
 		locals:          make(map[string]*LocalRepo),
+		perRepoStaleTTL: make(map[string]time.Duration),
 	}
 }
 
@@ -217,4 +219,29 @@ func (s *Store) LocalLabels() []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// SetRepoStaleTTL sets a per-repo stale TTL override.
+// Pass zero to remove the override and use the store default.
+func (s *Store) SetRepoStaleTTL(host, owner, repo string, ttl time.Duration) {
+	key := host + "/" + owner + "/" + repo
+	s.mu.Lock()
+	if ttl == 0 {
+		delete(s.perRepoStaleTTL, key)
+	} else {
+		s.perRepoStaleTTL[key] = ttl
+	}
+	s.mu.Unlock()
+}
+
+// resolveStaleTTL returns the effective stale TTL for a repo key,
+// checking per-repo overrides first, then falling back to the store default.
+func (s *Store) resolveStaleTTL(key string) time.Duration {
+	s.mu.RLock()
+	ttl, ok := s.perRepoStaleTTL[key]
+	s.mu.RUnlock()
+	if ok {
+		return ttl
+	}
+	return s.defaultStaleTTL
 }

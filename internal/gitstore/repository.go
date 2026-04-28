@@ -15,3 +15,7 @@ type Repository interface {
 	ReadTree(hash plumbing.Hash, path string) ([]TreeEntry, error)
 	FetchNow(ctx context.Context) error
 }
+
+// Compile-time interface assertions.
+var _ Repository = (*Repo)(nil)
+var _ Repository = (*LocalRepo)(nil)
