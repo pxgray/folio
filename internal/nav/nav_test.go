@@ -245,3 +245,48 @@ func TestLabelFromFilename(t *testing.T) {
 		}
 	}
 }
+
+func TestParseWithSections(t *testing.T) {
+	input := []byte(`
+title: My Project
+sections:
+  - label: Getting Started
+    nav:
+      - Overview: docs/index.md
+      - Install: docs/install.md
+  - label: Reference
+    nav:
+      - API: docs/api.md
+      - Config: docs/config.md
+`)
+	result, err := ParseWithSections(input)
+	if err != nil {
+		t.Fatalf("ParseWithSections: %v", err)
+	}
+	if len(result.Sections) != 2 {
+		t.Fatalf("expected 2 sections, got %d", len(result.Sections))
+	}
+	if result.Sections[0].Label != "Getting Started" {
+		t.Errorf("section[0].Label = %q, want %q", result.Sections[0].Label, "Getting Started")
+	}
+	if len(result.Sections[0].Nav) != 2 {
+		t.Errorf("section[0] has %d items, want 2", len(result.Sections[0].Nav))
+	}
+	if result.Sections[1].Label != "Reference" {
+		t.Errorf("section[1].Label = %q, want %q", result.Sections[1].Label, "Reference")
+	}
+}
+
+func TestParseWithSections_EmptyNav(t *testing.T) {
+	input := []byte(`title: Empty Project`)
+	result, err := ParseWithSections(input)
+	if err != nil {
+		t.Fatalf("ParseWithSections: %v", err)
+	}
+	if len(result.Sections) != 1 {
+		t.Fatalf("expected 1 section, got %d", len(result.Sections))
+	}
+	if len(result.Sections[0].Nav) != 0 {
+		t.Errorf("expected empty nav, got %d items", len(result.Sections[0].Nav))
+	}
+}
