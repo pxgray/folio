@@ -196,7 +196,8 @@ func (s *Server) handleAdminToggleAdmin(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if affected == 0 {
-			setFlash(w, "Cannot demote the last admin.")
+			// Another request demoted this user between GetUserByID and DemoteAdmin.
+			setFlash(w, "Admin status already updated.")
 			http.Redirect(w, r, "/-/dashboard/admin/", http.StatusSeeOther)
 			return
 		}
