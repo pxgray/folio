@@ -221,8 +221,9 @@ func (s *Store) LocalLabels() []string {
 	return out
 }
 
-// SetRepoStaleTTL sets a per-repo stale TTL override.
-// Pass zero to remove the override and use the store default.
+// SetRepoStaleTTL sets a per-repo stale TTL override and applies it
+// to the registered repo (if any). Pass zero to remove the override
+// and fall back to the store default.
 func (s *Store) SetRepoStaleTTL(host, owner, repo string, ttl time.Duration) {
 	key := host + "/" + owner + "/" + repo
 	s.mu.Lock()
@@ -230,6 +231,9 @@ func (s *Store) SetRepoStaleTTL(host, owner, repo string, ttl time.Duration) {
 		delete(s.perRepoStaleTTL, key)
 	} else {
 		s.perRepoStaleTTL[key] = ttl
+	}
+	if r, ok := s.repos[key]; ok {
+		r.SetStaleTTL(ttl)
 	}
 	s.mu.Unlock()
 }
