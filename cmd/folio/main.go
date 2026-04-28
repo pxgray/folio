@@ -23,7 +23,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 || os.Args[1] != "serve" {
-		fmt.Fprintf(os.Stderr, "usage: folio serve [--db path]\n")
+		fmt.Fprintf(os.Stderr, "usage: folio serve [--db path] [--port port]\n")
 		os.Exit(1)
 	}
 
@@ -33,6 +33,7 @@ func main() {
 		defaultDB = "folio.db"
 	}
 	dbPath := serveCmd.String("db", defaultDB, "path to SQLite database file")
+	port := serveCmd.String("port", "", "TCP port to listen on (overrides db setting)")
 	if err := serveCmd.Parse(os.Args[2:]); err != nil {
 		log.Fatalf("folio: %v", err)
 	}
@@ -79,11 +80,16 @@ func main() {
 	var gitStore *gitstore.Store
 	addr := ":8080"
 
-	if setupComplete {
+	if *port != "" {
+		addr = ":" + *port
+	} else if setupComplete {
 		// Load settings.
 		if v, err := store.GetSetting(ctx, "addr"); err == nil && v != "" {
 			addr = v
 		}
+	}
+
+	if setupComplete {
 		cacheDir := "~/.cache/folio"
 		if v, err := store.GetSetting(ctx, "cache_dir"); err == nil && v != "" {
 			cacheDir = v
