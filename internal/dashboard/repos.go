@@ -110,21 +110,27 @@ func (s *Server) handleRepoCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Trigger background clone if gitStore is available.
 	if s.gitStore != nil {
+		repoID := repo.ID
+		repoHost := repo.Host
+		repoOwner := repo.RepoOwner
+		repoNameLocal := repo.RepoName
+		repoRemoteURL := repo.RemoteURL
+		repoStaleTTL := repo.StaleTTLSecs
 		go func() {
 			ctx := context.Background()
-			staleTTL := time.Duration(repo.StaleTTLSecs) * time.Second
+			staleTTL := time.Duration(repoStaleTTL) * time.Second
 			err := s.gitStore.AddRepo(ctx, gitstore.RepoEntry{
-				Host:      repo.Host,
-				Owner:     repo.RepoOwner,
-				Name:      repo.RepoName,
-				RemoteURL: repo.RemoteURL,
+				Host:      repoHost,
+				Owner:     repoOwner,
+				Name:      repoNameLocal,
+				RemoteURL: repoRemoteURL,
 				StaleTTL:  staleTTL,
 			})
 			if err != nil {
-				log.Printf("background clone failed for %s/%s/%s: %v", host, owner, repoName, err)
-				_ = s.dbStore.UpdateRepoStatus(context.Background(), repo.ID, db.RepoStatusError, err.Error())
+				log.Printf("background clone failed for %s/%s/%s: %v", repoHost, repoOwner, repoNameLocal, err)
+				_ = s.dbStore.UpdateRepoStatus(context.Background(), repoID, db.RepoStatusError, err.Error())
 			} else {
-				_ = s.dbStore.UpdateRepoStatus(context.Background(), repo.ID, db.RepoStatusReady, "")
+				_ = s.dbStore.UpdateRepoStatus(context.Background(), repoID, db.RepoStatusReady, "")
 			}
 		}()
 	}
@@ -270,14 +276,17 @@ func (s *Server) handleRepoSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.gitStore != nil {
+		host := repo.Host
+		owner := repo.RepoOwner
+		name := repo.RepoName
 		go func() {
-			gitRepo, err := s.gitStore.Get(repo.Host, repo.RepoOwner, repo.RepoName)
+			gitRepo, err := s.gitStore.Get(host, owner, name)
 			if err != nil {
-				log.Printf("sync: repo not registered %s/%s/%s: %v", repo.Host, repo.RepoOwner, repo.RepoName, err)
+				log.Printf("sync: repo not registered %s/%s/%s: %v", host, owner, name, err)
 				return
 			}
 			if err := gitRepo.FetchNow(context.Background()); err != nil {
-				log.Printf("sync failed for %s/%s/%s: %v", repo.Host, repo.RepoOwner, repo.RepoName, err)
+				log.Printf("sync failed for %s/%s/%s: %v", host, owner, name, err)
 			}
 		}()
 	}
