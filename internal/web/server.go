@@ -58,12 +58,12 @@ func New(dbStore db.Store, gitStore *gitstore.Store, tmplFS embed.FS, staticFS f
 	}
 
 	s := &Server{
-		store:            gitStore,
-		dbStore:          dbStore,
-		docTmpl:          docTmpl,
-		indexTmpl:        indexTmpl,
-		staticFS:         staticFS,
-		webhookLimiter:   make(map[string]time.Time),
+		store:          gitStore,
+		dbStore:        dbStore,
+		docTmpl:        docTmpl,
+		indexTmpl:      indexTmpl,
+		staticFS:       staticFS,
+		webhookLimiter: make(map[string]time.Time),
 	}
 
 	if err := s.reloadConfig(context.Background()); err != nil {
