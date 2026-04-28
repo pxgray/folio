@@ -70,6 +70,8 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("folio: webhook fetch complete for %s/%s/%s", host, owner, repo)
 
+	s.clearNavCache(key)
+
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprintln(w, "ok")
 }

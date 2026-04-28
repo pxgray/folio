@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -63,7 +64,7 @@ func (s *Server) handleDoc(w http.ResponseWriter, r *http.Request) {
 
 	repoBase := "/" + host + "/" + owner + "/" + repo
 	repoName := host + "/" + owner + "/" + repo
-	s.serveRepo(w, r, gr, ref, repoBase, repoName, filePath, trusted)
+	s.serveRepo(w, r, gr, ref, repoBase, repoName, key, filePath, trusted)
 }
 
 func (s *Server) handleLocalDoc(w http.ResponseWriter, r *http.Request) {
@@ -89,17 +90,17 @@ func (s *Server) handleLocalDoc(w http.ResponseWriter, r *http.Request) {
 
 	repoBase := "/local/" + label
 	repoName := "local/" + label
-	s.serveRepo(w, r, gr, "", repoBase, repoName, filePath, trusted)
+	s.serveRepo(w, r, gr, "", repoBase, repoName, "local/"+label, filePath, trusted)
 }
 
-func (s *Server) serveRepo(w http.ResponseWriter, r *http.Request, repo gitstore.Repository, ref, repoBase, repoName, filePath string, trusted bool) {
+func (s *Server) serveRepo(w http.ResponseWriter, r *http.Request, repo gitstore.Repository, ref, repoBase, repoName, repoKey, filePath string, trusted bool) {
 	hash, err := s.resolveRef(w, repo, ref)
 	if err != nil {
 		return
 	}
 
 	if filePath == "" {
-		navResult := loadNavResult(repo, hash)
+		navResult := s.loadNavResult(repo, hash, repoKey)
 		navItems := sectionsToNav(navResult.Sections)
 		if leaf := firstNavLeaf(navItems); leaf != "" {
 			dest := repoBase + "/" + leaf + refQuery(ref)
@@ -110,7 +111,7 @@ func (s *Server) serveRepo(w http.ResponseWriter, r *http.Request, repo gitstore
 		return
 	}
 
-	navResult := s.loadNavAndCheck(repo, hash, filePath)
+	navResult := s.loadNavAndCheck(repo, hash, filePath, repoKey)
 	s.dispatchToContent(w, r, repo, hash, repoBase, repoName, filePath, ref, navResult, trusted)
 }
 
@@ -151,8 +152,8 @@ func (s *Server) resolveRef(w http.ResponseWriter, repo gitstore.Repository, ref
 	return hash, nil
 }
 
-func (s *Server) loadNavAndCheck(repo gitstore.Repository, hash plumbing.Hash, filePath string) nav.ParseResult {
-	navResult := loadNavResult(repo, hash)
+func (s *Server) loadNavAndCheck(repo gitstore.Repository, hash plumbing.Hash, filePath, repoKey string) nav.ParseResult {
+	navResult := s.loadNavResult(repo, hash, repoKey)
 	navItems := sectionsToNav(navResult.Sections)
 	if !navCoversPath(navItems, filePath) {
 		navResult.Sections = nil
@@ -290,24 +291,61 @@ func navCoversPath(items []nav.Item, filePath string) bool {
 	return false
 }
 
-func loadNavResult(repo gitstore.Repository, hash plumbing.Hash) nav.ParseResult {
+func (s *Server) loadNavResult(repo gitstore.Repository, hash plumbing.Hash, repoKey string) nav.ParseResult {
+	key := navCacheKey{repoKey: repoKey, hash: hash.String()}
+	s.navCacheMu.RLock()
+	if entry, ok := s.navCache[key]; ok {
+		s.navCacheMu.RUnlock()
+		if time.Now().Before(entry.expiredAt) {
+			return entry.result
+		}
+		delete(s.navCache, key)
+	} else {
+		s.navCacheMu.RUnlock()
+	}
+
+	var result nav.ParseResult
 	if data, err := repo.ReadBlob(hash, "folio.yml"); err == nil {
-		if result, err := nav.ParseWithSections(data); err == nil {
-			return result
+		if parsed, err := nav.ParseWithSections(data); err == nil {
+			result = parsed
 		}
 	}
-	walker := func(dirPath string) ([]nav.WalkEntry, error) {
-		entries, err := repo.ReadTree(hash, dirPath)
-		if err != nil {
-			return nil, err
+	if isNavEmpty(result) {
+		walker := func(dirPath string) ([]nav.WalkEntry, error) {
+			entries, err := repo.ReadTree(hash, dirPath)
+			if err != nil {
+				return nil, err
+			}
+			entriesCopy := make([]nav.WalkEntry, len(entries))
+			for i, e := range entries {
+				entriesCopy[i] = nav.WalkEntry{Name: e.Name, IsDir: e.IsDir}
+			}
+			return entriesCopy, nil
 		}
-		result := make([]nav.WalkEntry, len(entries))
-		for i, e := range entries {
-			result[i] = nav.WalkEntry{Name: e.Name, IsDir: e.IsDir}
-		}
-		return result, nil
+		result = nav.ParseResult{Sections: []nav.Section{{Nav: nav.AutoGenerate(walker, "")}}}
 	}
-	return nav.ParseResult{Sections: []nav.Section{{Nav: nav.AutoGenerate(walker, "")}}}
+
+	s.navCacheMu.Lock()
+	s.navCache[key] = navCacheEntry{
+		result:    result,
+		expiredAt: time.Now().Add(navCacheTTL),
+	}
+	if len(s.navCache) > 256 {
+		for k := range s.navCache {
+			delete(s.navCache, k)
+			break
+		}
+	}
+	s.navCacheMu.Unlock()
+	return result
+}
+
+func isNavEmpty(r nav.ParseResult) bool {
+	if len(r.Sections) == 0 {
+		return true
+	}
+	s := r.Sections[0]
+	return len(s.Nav) == 0 && s.Label == "" && s.DefaultPath == ""
 }
 
 func headingTitle(src string) string {

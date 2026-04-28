@@ -16,12 +16,27 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/pxgray/folio/internal/db"
 	"github.com/pxgray/folio/internal/gitstore"
+	"github.com/pxgray/folio/internal/nav"
 )
 
 // repoArtifactConfig holds per-repo artifact configuration.
 type repoArtifactConfig struct {
 	artifacts map[string]string
 }
+
+// navCacheEntry holds a cached nav result with its expiration time.
+type navCacheEntry struct {
+	result    nav.ParseResult
+	expiredAt time.Time
+}
+
+// navCacheKey is a composite key for the nav cache.
+type navCacheKey struct {
+	repoKey string
+	hash    string
+}
+
+const navCacheTTL = 5 * time.Minute
 
 // Server is the Folio HTTP server.
 type Server struct {
@@ -38,6 +53,10 @@ type Server struct {
 
 	webhookLimiter map[string]time.Time
 	webhookMu      sync.Mutex
+
+	navCache     map[navCacheKey]navCacheEntry
+	navCacheMu   sync.RWMutex
+	navCacheSize int
 }
 
 // New creates a Server. tmplFS should embed templates/*.html and staticFS
@@ -64,6 +83,7 @@ func New(dbStore db.Store, gitStore *gitstore.Store, tmplFS embed.FS, staticFS f
 		indexTmpl:      indexTmpl,
 		staticFS:       staticFS,
 		webhookLimiter: make(map[string]time.Time),
+		navCache:       make(map[navCacheKey]navCacheEntry),
 	}
 
 	if err := s.reloadConfig(context.Background()); err != nil {
@@ -200,4 +220,36 @@ func loggingMiddleware(next http.Handler) http.Handler {
 
 func httpError(w http.ResponseWriter, code int, msg string) {
 	http.Error(w, msg, code)
+}
+
+// clearNavCache removes all cached nav entries for a given repo key.
+// Called from webhook handling when a repo is fetched.
+func (s *Server) clearNavCache(repoKey string) {
+	s.navCacheMu.Lock()
+	defer s.navCacheMu.Unlock()
+	for k := range s.navCache {
+		if k.repoKey == repoKey {
+			delete(s.navCache, k)
+		}
+	}
+}
+
+// evictNavCache removes expired entries and enforces the max cache size.
+func (s *Server) evictNavCache() {
+	s.navCacheMu.Lock()
+	defer s.navCacheMu.Unlock()
+	now := time.Now()
+	for k, v := range s.navCache {
+		if now.After(v.expiredAt) {
+			delete(s.navCache, k)
+		}
+	}
+	const maxNavCache = 256
+	for len(s.navCache) > maxNavCache {
+		for k := range s.navCache {
+			delete(s.navCache, k)
+			break
+		}
+	}
+	s.navCacheSize = len(s.navCache)
 }
