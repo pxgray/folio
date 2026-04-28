@@ -185,14 +185,24 @@ func (s *Store) GetLocal(label string) (Repository, error) {
 
 // OpenLocals registers local filesystem repos. Should be called once at startup
 // for any TOML-configured local repos (deprecated path; new repos use db.Store).
+// All entries are validated before any are registered (all-or-nothing semantics).
 func (s *Store) OpenLocals(locals []LocalEntry) error {
+	// Validate all entries first, including checking for duplicates within the input.
+	seen := make(map[string]bool, len(locals))
 	for _, lc := range locals {
+		if seen[lc.Label] {
+			return fmt.Errorf("local repo: duplicate label %q", lc.Label)
+		}
+		seen[lc.Label] = true
 		if _, exists := s.locals[lc.Label]; exists {
 			return fmt.Errorf("local repo: duplicate label %q", lc.Label)
 		}
 		if _, err := os.Stat(lc.Path); err != nil {
 			return fmt.Errorf("local repo %q: %w", lc.Label, err)
 		}
+	}
+	// All valid — register them.
+	for _, lc := range locals {
 		s.locals[lc.Label] = newLocalRepo(lc.Path)
 		log.Printf("folio: registered local repo %q at %s", lc.Label, lc.Path)
 	}
