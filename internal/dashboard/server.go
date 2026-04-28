@@ -90,7 +90,7 @@ func (s *Server) Handler() http.Handler {
 		r.Patch("/settings", s.handleAdminPatchSettings)
 	})
 	r.Route("/-/dashboard", func(r chi.Router) {
-		r.Use(auth.RequireAuth(s.authn))
+		r.Use(auth.RequireAuth(s.authn), withCSRFToken, requireCSRF)
 		r.Get("/", s.handleRepoList)
 		r.Get("/repos/new", s.handleRepoNew)
 		r.Post("/repos/new", s.handleRepoCreate)
@@ -118,10 +118,13 @@ func (s *Server) Handler() http.Handler {
 // setFlash stores a one-time flash message in a short-lived cookie.
 func setFlash(w http.ResponseWriter, msg string) {
 	http.SetCookie(w, &http.Cookie{
-		Name:   "_flash",
-		Value:  url.QueryEscape(msg),
-		Path:   "/",
-		MaxAge: 60,
+		Name:     "_flash",
+		Value:    url.QueryEscape(msg),
+		Path:     "/",
+		MaxAge:   60,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 
@@ -131,7 +134,7 @@ func getFlash(w http.ResponseWriter, r *http.Request) string {
 	if err != nil {
 		return ""
 	}
-	http.SetCookie(w, &http.Cookie{Name: "_flash", Value: "", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: "_flash", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
 	v, _ := url.QueryUnescape(c.Value)
 	return v
 }

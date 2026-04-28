@@ -17,11 +17,12 @@ import (
 )
 
 type repoListData struct {
-	Title   string
-	Flash   string
-	IsAdmin bool
-	User    *db.User
-	Repos   []*db.Repo
+	Title     string
+	Flash     string
+	IsAdmin   bool
+	User      *db.User
+	Repos     []*db.Repo
+	CSRFToken string
 }
 
 type repoFormData struct {
@@ -32,6 +33,7 @@ type repoFormData struct {
 	Repo       *db.Repo // nil for new, populated for edit
 	Error      string
 	WebhookURL string // only populated on edit page
+	CSRFToken  string
 }
 
 func (s *Server) handleRepoList(w http.ResponseWriter, r *http.Request) {
@@ -42,20 +44,22 @@ func (s *Server) handleRepoList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderTemplate(w, "dashboard_repos.html", repoListData{
-		Title:   "Repos",
-		Flash:   getFlash(w, r),
-		IsAdmin: user.IsAdmin,
-		User:    user,
-		Repos:   repos,
+		Title:     "Repos",
+		Flash:     getFlash(w, r),
+		IsAdmin:   user.IsAdmin,
+		User:      user,
+		Repos:     repos,
+		CSRFToken: csrfTokenFromContext(r),
 	})
 }
 
 func (s *Server) handleRepoNew(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
-		Title:   "Add Repo",
-		IsAdmin: user.IsAdmin,
-		User:    user,
+		Title:     "Add Repo",
+		IsAdmin:   user.IsAdmin,
+		User:      user,
+		CSRFToken: csrfTokenFromContext(r),
 	})
 }
 
@@ -73,10 +77,11 @@ func (s *Server) handleRepoCreate(w http.ResponseWriter, r *http.Request) {
 	if host == "" || owner == "" || repoName == "" {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
-			Title:   "Add Repo",
-			IsAdmin: user.IsAdmin,
-			User:    user,
-			Error:   "Host, Owner, and Repo Name are required.",
+			Title:     "Add Repo",
+			IsAdmin:   user.IsAdmin,
+			User:      user,
+			Error:     "Host, Owner, and Repo Name are required.",
+			CSRFToken: csrfTokenFromContext(r),
 		})
 		return
 	}
@@ -94,10 +99,11 @@ func (s *Server) handleRepoCreate(w http.ResponseWriter, r *http.Request) {
 	if err := s.dbStore.CreateRepo(r.Context(), repo); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
-			Title:   "Add Repo",
-			IsAdmin: user.IsAdmin,
-			User:    user,
-			Error:   "Could not create repo: " + err.Error(),
+			Title:     "Add Repo",
+			IsAdmin:   user.IsAdmin,
+			User:      user,
+			Error:     "Could not create repo: " + err.Error(),
+			CSRFToken: csrfTokenFromContext(r),
 		})
 		return
 	}
@@ -127,14 +133,21 @@ func (s *Server) handleRepoCreate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/-/dashboard/", http.StatusSeeOther)
 }
 
-func mustParseID(s string) int64 {
-	id, _ := strconv.ParseInt(s, 10, 64)
-	return id
+func parseID(s string) (int64, error) {
+	id, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid id: %w", err)
+	}
+	return id, nil
 }
 
 func (s *Server) handleRepoEdit(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
-	id := mustParseID(chi.URLParam(r, "id"))
+	id, err := parseID(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	repo, err := s.dbStore.GetRepo(r.Context(), id)
 	if err != nil || id == 0 {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -152,12 +165,17 @@ func (s *Server) handleRepoEdit(w http.ResponseWriter, r *http.Request) {
 		User:       user,
 		Repo:       repo,
 		WebhookURL: webhookURL,
+		CSRFToken:  csrfTokenFromContext(r),
 	})
 }
 
 func (s *Server) handleRepoUpdate(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
-	id := mustParseID(chi.URLParam(r, "id"))
+	id, err := parseID(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	repo, err := s.dbStore.GetRepo(r.Context(), id)
 	if err != nil || id == 0 {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -177,11 +195,12 @@ func (s *Server) handleRepoUpdate(w http.ResponseWriter, r *http.Request) {
 	if host == "" || owner == "" || repoName == "" {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
-			Title:   "Edit Repo",
-			IsAdmin: user.IsAdmin,
-			User:    user,
-			Repo:    repo,
-			Error:   "Host, Owner, and Repo Name are required.",
+			Title:     "Edit Repo",
+			IsAdmin:   user.IsAdmin,
+			User:      user,
+			Repo:      repo,
+			Error:     "Host, Owner, and Repo Name are required.",
+			CSRFToken: csrfTokenFromContext(r),
 		})
 		return
 	}
@@ -194,11 +213,12 @@ func (s *Server) handleRepoUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := s.dbStore.UpdateRepo(r.Context(), repo); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
-			Title:   "Edit Repo",
-			IsAdmin: user.IsAdmin,
-			User:    user,
-			Repo:    repo,
-			Error:   "Save failed: " + err.Error(),
+			Title:     "Edit Repo",
+			IsAdmin:   user.IsAdmin,
+			User:      user,
+			Repo:      repo,
+			Error:     "Save failed: " + err.Error(),
+			CSRFToken: csrfTokenFromContext(r),
 		})
 		return
 	}
@@ -208,7 +228,11 @@ func (s *Server) handleRepoUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRepoDelete(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
-	id := mustParseID(chi.URLParam(r, "id"))
+	id, err := parseID(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	repo, err := s.dbStore.GetRepo(r.Context(), id)
 	if err != nil || id == 0 {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -231,7 +255,11 @@ func (s *Server) handleRepoDelete(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRepoSync(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
-	id := mustParseID(chi.URLParam(r, "id"))
+	id, err := parseID(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	repo, err := s.dbStore.GetRepo(r.Context(), id)
 	if err != nil || id == 0 {
 		http.Error(w, "not found", http.StatusNotFound)

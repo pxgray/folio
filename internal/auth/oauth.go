@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
@@ -52,8 +53,10 @@ func GoogleOAuthConfig(cfg OAuthConfig) *oauth2.Config {
 
 // FetchGitHubProfile exchanges token for the GitHub user profile.
 func FetchGitHubProfile(ctx context.Context, token *oauth2.Token, cfg OAuthConfig) (*OAuthProfile, error) {
-	client := GitHubOAuthConfig(cfg).Client(ctx, token)
-	resp, err := client.Get("https://api.github.com/user")
+	ts := oauth2.StaticTokenSource(token)
+	tc := oauth2.NewClient(ctx, ts)
+	tc.Timeout = 10 * time.Second
+	resp, err := tc.Get("https://api.github.com/user")
 	if err != nil {
 		return nil, fmt.Errorf("FetchGitHubProfile: %w", err)
 	}
