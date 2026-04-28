@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -104,8 +105,17 @@ func (s *Store) RepoEntries() []RepoEntry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]RepoEntry, 0, len(s.repos))
-	for range s.repos {
-		out = append(out, RepoEntry{})
+	for key, repo := range s.repos {
+		parts := strings.Split(key, "/")
+		if len(parts) != 3 {
+			continue
+		}
+		out = append(out, RepoEntry{
+			Host:      parts[0],
+			Owner:     parts[1],
+			Name:      parts[2],
+			RemoteURL: repo.CloneURL(),
+		})
 	}
 	return out
 }

@@ -51,6 +51,11 @@ func newRepo(cloneURL, localDir string, staleTTL time.Duration) *Repo {
 	}
 }
 
+// CloneURL returns the remote URL this repo was cloned from.
+func (r *Repo) CloneURL() string {
+	return r.cloneURL
+}
+
 // open opens an already-cloned bare repo from disk.
 func (r *Repo) open() error {
 	repo, err := git.PlainOpen(r.localDir)

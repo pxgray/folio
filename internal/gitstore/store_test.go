@@ -104,6 +104,79 @@ func TestAddRepo_NoOpOnDuplicate(t *testing.T) {
 	}
 }
 
+func TestRepoEntries_ReturnsCorrectData(t *testing.T) {
+	bareDir := makeTestBareRepo(t)
+	s := gitstore.New(t.TempDir(), 5*time.Minute)
+
+	err := s.AddRepo(t.Context(), gitstore.RepoEntry{
+		Host:      "github.com",
+		Owner:     "acme",
+		Name:      "docs",
+		RemoteURL: "file://" + bareDir,
+	})
+	if err != nil {
+		t.Fatalf("AddRepo: %v", err)
+	}
+
+	err = s.AddRepo(t.Context(), gitstore.RepoEntry{
+		Host:      "gitlab.com",
+		Owner:     "team",
+		Name:      "wiki",
+		RemoteURL: "file://" + bareDir,
+	})
+	if err != nil {
+		t.Fatalf("AddRepo: %v", err)
+	}
+
+	entries := s.RepoEntries()
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+
+	// Build a map for easier lookup
+	byKey := make(map[string]gitstore.RepoEntry)
+	for _, e := range entries {
+		byKey[e.Host+"/"+e.Owner+"/"+e.Name] = e
+	}
+
+	for _, want := range []struct {
+		host, owner, name string
+		remoteURL         string
+	}{
+		{"github.com", "acme", "docs", "file://" + bareDir},
+		{"gitlab.com", "team", "wiki", "file://" + bareDir},
+	} {
+		entry, ok := byKey[want.host+"/"+want.owner+"/"+want.name]
+		if !ok {
+			t.Errorf("missing entry for %s/%s/%s", want.host, want.owner, want.name)
+			continue
+		}
+		if entry.Host != want.host {
+			t.Errorf("%s/%s/%s: Host = %q, want %q", want.host, want.owner, want.name, entry.Host, want.host)
+		}
+		if entry.Owner != want.owner {
+			t.Errorf("%s/%s/%s: Owner = %q, want %q", want.host, want.owner, want.name, entry.Owner, want.owner)
+		}
+		if entry.Name != want.name {
+			t.Errorf("%s/%s/%s: Name = %q, want %q", want.host, want.owner, want.name, entry.Name, want.name)
+		}
+		if entry.RemoteURL != want.remoteURL {
+			t.Errorf("%s/%s/%s: RemoteURL = %q, want %q", want.host, want.owner, want.name, entry.RemoteURL, want.remoteURL)
+		}
+	}
+}
+
+func TestRepoEntries_EmptyWhenNoRepos(t *testing.T) {
+	s := gitstore.New(t.TempDir(), 5*time.Minute)
+	entries := s.RepoEntries()
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries, got %d", len(entries))
+	}
+	if entries == nil {
+		t.Error("expected non-nil slice")
+	}
+}
+
 func TestRemoveRepo_RemovesKey(t *testing.T) {
 	bareDir := makeTestBareRepo(t)
 	s := gitstore.New(t.TempDir(), 5*time.Minute)
