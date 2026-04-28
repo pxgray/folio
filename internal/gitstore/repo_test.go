@@ -216,6 +216,9 @@ func makeUpstreamAndClone(t *testing.T) (*Repo, func(content string)) {
 	if err := r.clone(context.Background()); err != nil {
 		t.Fatalf("clone: %v", err)
 	}
+	if r.r == nil {
+		t.Fatal("clone did not set r.r")
+	}
 
 	push := func(content string) {
 		t.Helper()
@@ -268,8 +271,9 @@ func TestFetchNowSeesNewCommits(t *testing.T) {
 	}
 }
 
-// TestFetchNowSeesNewCommitsExplicitRef verifies that FetchNow also updates
-// refs visible via explicit ?ref=<branch> queries.
+// TestFetchNowSeesNewCommitsExplicitRef verifies that FetchNow updates
+// remote-tracking refs (refs/remotes/origin/*) which are the source of truth
+// for ?ref=<branch> queries via resolveViaGit.
 func TestFetchNowSeesNewCommitsExplicitRef(t *testing.T) {
 	r, push := makeUpstreamAndClone(t)
 	ctx := context.Background()
@@ -280,20 +284,20 @@ func TestFetchNowSeesNewCommitsExplicitRef(t *testing.T) {
 		t.Fatalf("ResolveRef initial HEAD: %v", err)
 	}
 
-	// Find the branch name that this hash lives on.
+	// Find the remote-tracking branch name that this hash lives on.
 	refs, err := r.r.References()
 	if err != nil {
 		t.Fatalf("list refs: %v", err)
 	}
 	var branch string
 	_ = refs.ForEach(func(ref *plumbing.Reference) error {
-		if ref.Name().IsBranch() && ref.Hash() == h1 {
+		if ref.Name().IsRemote() && ref.Hash() == h1 {
 			branch = ref.Name().Short()
 		}
 		return nil
 	})
 	if branch == "" {
-		t.Skip("could not find branch name for HEAD, skipping explicit-ref test")
+		t.Skip("could not find remote-tracking branch for HEAD, skipping explicit-ref test")
 	}
 
 	push("v2 content")
@@ -302,12 +306,29 @@ func TestFetchNowSeesNewCommitsExplicitRef(t *testing.T) {
 		t.Fatalf("FetchNow: %v", err)
 	}
 
+	// Verify the remote-tracking ref was updated.
+	remoteRef, err := r.r.Reference(plumbing.ReferenceName("refs/remotes/"+branch), true)
+	if err != nil {
+		t.Fatalf("resolve %s: %v", branch, err)
+	}
+	if remoteRef.Hash() == h1 {
+		t.Errorf("remote-tracking ref %s unchanged after push+FetchNow: %s", branch, h1)
+	}
+
+	// Verify the new content is readable via the remote-tracking ref.
 	h2, err := r.ResolveRef(ctx, branch)
 	if err != nil {
 		t.Fatalf("ResolveRef(%q) after fetch: %v", branch, err)
 	}
 	if h1 == h2 {
-		t.Errorf("explicit ?ref=%s hash unchanged after push+FetchNow: %s — refs/heads/* not updated by fetch", branch, h1)
+		t.Errorf("explicit ?ref=%s hash unchanged after push+FetchNow: %s", branch, h1)
+	}
+	blob, err := r.ReadBlob(h2, "README.md")
+	if err != nil {
+		t.Fatalf("ReadBlob: %v", err)
+	}
+	if string(blob) != "v2 content" {
+		t.Errorf("README.md: want %q got %q", "v2 content", blob)
 	}
 }
 
@@ -326,5 +347,47 @@ func TestHeadCaching(t *testing.T) {
 	}
 	if h1 != h2 {
 		t.Error("cache miss: got different hashes on consecutive calls")
+	}
+}
+
+func TestDoFetch_OnlyRemoteTracking(t *testing.T) {
+	// Verify that doFetch only updates refs/remotes/origin/* and never
+	// touches local refs/heads/*, preventing silent overwrite of local branches.
+	r, push := makeUpstreamAndClone(t)
+	ctx := context.Background()
+
+	// Create a local branch pointing at HEAD.
+	localBranch := "feature"
+	headRef, err := r.r.Reference(plumbing.HEAD, true)
+	if err != nil {
+		t.Fatalf("resolve HEAD: %v", err)
+	}
+	localRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName(localBranch), headRef.Hash())
+	if err := r.r.Storer.SetReference(localRef); err != nil {
+		t.Fatalf("create local branch: %v", err)
+	}
+
+	// Record the local branch hash before fetch.
+	localBranchHashBefore, err := r.r.Reference(plumbing.NewBranchReferenceName(localBranch), true)
+	if err != nil {
+		t.Fatalf("resolve local branch: %v", err)
+	}
+
+	// Push a new commit to upstream.
+	push("v2 content")
+
+	// Fetch.
+	if err := r.FetchNow(ctx); err != nil {
+		t.Fatalf("FetchNow: %v", err)
+	}
+
+	// Verify local branch hash is unchanged.
+	localBranchHashAfter, err := r.r.Reference(plumbing.NewBranchReferenceName(localBranch), true)
+	if err != nil {
+		t.Fatalf("resolve local branch after fetch: %v", err)
+	}
+	if localBranchHashAfter.Hash() != localBranchHashBefore.Hash() {
+		t.Errorf("local branch %s was modified by fetch: %s → %s", localBranch,
+			localBranchHashBefore.Hash(), localBranchHashAfter.Hash())
 	}
 }

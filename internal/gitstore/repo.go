@@ -266,13 +266,11 @@ func (r *Repo) doFetch(ctx context.Context) error {
 	}
 	// go-git bare clones with the default refspec (+refs/heads/*:refs/remotes/origin/*)
 	// only update refs/remotes/origin/* on fetch, leaving refs/heads/* frozen at the
-	// clone-time values. Explicit ?ref=<branch> queries resolve via refs/heads/*, so
-	// they would never see new commits. Specifying both mappings keeps both in sync.
+	// clone-time values. This prevents silently overwriting local branches.
 	err = remote.FetchContext(ctx, &git.FetchOptions{
 		RemoteName: "origin",
 		Tags:       git.AllTags,
 		RefSpecs: []gitconfig.RefSpec{
-			"+refs/heads/*:refs/heads/*",
 			"+refs/heads/*:refs/remotes/origin/*",
 		},
 		Force: true,
