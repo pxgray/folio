@@ -79,9 +79,24 @@ func (t *LinkRewriter) rewrite(dest string) string {
 }
 
 func isAbsoluteURL(s string) bool {
-	return strings.HasPrefix(s, "http://") ||
-		strings.HasPrefix(s, "https://") ||
-		strings.HasPrefix(s, "//")
+	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") ||
+		strings.HasPrefix(s, "//") {
+		return true
+	}
+	// Check for any URI scheme (mailto:, tel:, data:, ftp://, etc.)
+	if i := strings.Index(s, ":"); i > 0 {
+		for j := 0; j < i; j++ {
+			c := s[j]
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+				return false
+			}
+		}
+		return true
+	}
+	if strings.HasPrefix(s, "#") {
+		return true
+	}
+	return false
 }
 
 func isFragmentOnly(s string) bool {
