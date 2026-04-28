@@ -8,6 +8,7 @@
   <section>
     <h2>Profile</h2>
     <form method="post" action="/-/dashboard/settings">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
       <label>Display Name
         <input type="text" name="display_name" value="{{.User.Name}}">
       </label>
@@ -18,6 +19,7 @@
   <section>
     <h2>Change Password</h2>
     <form method="post" action="/-/dashboard/settings">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
       <label>Current Password
         <input type="password" name="current_password" autocomplete="current-password">
       </label>
@@ -35,6 +37,7 @@
       <span>GitHub</span>
       {{if has .LinkedOAuth "github"}}
       <form method="post" action="/-/dashboard/settings/unlink/github" style="display:inline">
+        <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
         <button type="submit" class="btn">Unlink</button>
       </form>
       {{else}}
@@ -46,6 +49,7 @@
       <span>Google</span>
       {{if has .LinkedOAuth "google"}}
       <form method="post" action="/-/dashboard/settings/unlink/google" style="display:inline">
+        <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
         <button type="submit" class="btn">Unlink</button>
       </form>
       {{else}}

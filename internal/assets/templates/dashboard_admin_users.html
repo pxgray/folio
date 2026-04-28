@@ -35,6 +35,7 @@
           <div class="row-actions">
             <a href="/-/dashboard/admin/users/{{.ID}}" class="btn">Edit</a>
             <form method="POST" action="/-/dashboard/admin/users/{{.ID}}/toggle-admin">
+              <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
               {{if .IsAdmin}}
               <button type="submit" class="btn">Demote</button>
               {{else}}
@@ -45,6 +46,7 @@
             <button type="button" class="btn btn-danger" disabled title="Cannot delete your own account">Delete</button>
             {{else}}
             <form method="POST" action="/-/dashboard/admin/users/{{.ID}}/delete">
+              <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn-danger" onclick="return confirm('Delete this user?')">Delete</button>
             </form>
             {{end}}

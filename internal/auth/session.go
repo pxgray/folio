@@ -20,11 +20,14 @@ func (a *Auth) NewSession(ctx context.Context, userID int64) (db.Session, error)
 		return db.Session{}, fmt.Errorf("NewSession: rand: %w", err)
 	}
 	now := time.Now().UTC()
+	csrfBuf := make([]byte, 16)
+	rand.Read(csrfBuf)
 	sess := db.Session{
 		Token:     hex.EncodeToString(buf[:]),
 		UserID:    userID,
 		ExpiresAt: now.Add(sessionDuration),
 		CreatedAt: now,
+		CSRFToken: hex.EncodeToString(csrfBuf),
 	}
 	if err := a.store.CreateSession(ctx, &sess); err != nil {
 		return db.Session{}, fmt.Errorf("NewSession: %w", err)

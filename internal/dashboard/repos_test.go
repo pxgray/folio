@@ -175,6 +175,36 @@ func newSessionCookie(t *testing.T, store db.Store, userID int64) *http.Cookie {
 	return &http.Cookie{Name: "session", Value: sess.Token}
 }
 
+// csrfToken returns the CSRF token for a user's session.
+func csrfToken(t *testing.T, store db.Store, userID int64) string {
+	t.Helper()
+	authn := auth.New(store)
+	sess, err := authn.NewSession(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	return sess.CSRFToken
+}
+
+// newCSRFPost creates a POST request with session cookie, CSRF cookie, and CSRF form field.
+func newCSRFPost(t *testing.T, urlStr string, form url.Values, store db.Store, userID int64) *http.Request {
+	t.Helper()
+	authn := auth.New(store)
+	sess, err := authn.NewSession(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	form.Set("_csrf", sess.CSRFToken)
+	req, err := http.NewRequest(http.MethodPost, urlStr, strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "session", Value: sess.Token})
+	req.AddCookie(&http.Cookie{Name: "_csrf", Value: sess.CSRFToken})
+	return req
+}
+
 func TestDashboardRepoNew_GET(t *testing.T) {
 	ts, store, user := newDashboardTestServer(t)
 
@@ -213,13 +243,7 @@ func TestDashboardRepoNew_POST_Valid(t *testing.T) {
 		"repo_name": {"docs"},
 	}
 
-	req, err := http.NewRequest(http.MethodPost, ts.URL+"/-/dashboard/repos/new",
-		strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(newSessionCookie(t, store, user.ID))
+	req := newCSRFPost(t, ts.URL+"/-/dashboard/repos/new", form, store, user.ID)
 
 	// Do not follow redirect.
 	client := &http.Client{
@@ -373,14 +397,7 @@ func TestDashboardRepoEdit_POST_Valid(t *testing.T) {
 		"repo_name": {"wiki"},
 	}
 
-	req, err := http.NewRequest(http.MethodPost,
-		fmt.Sprintf("%s/-/dashboard/repos/%d", ts.URL, repo.ID),
-		strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(newSessionCookie(t, store, user.ID))
+	req := newCSRFPost(t, fmt.Sprintf("%s/-/dashboard/repos/%d", ts.URL, repo.ID), form, store, user.ID)
 
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -427,12 +444,7 @@ func TestDashboardRepoDelete(t *testing.T) {
 		t.Fatalf("CreateRepo: %v", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost,
-		fmt.Sprintf("%s/-/dashboard/repos/%d/delete", ts.URL, repo.ID), nil)
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	req.AddCookie(newSessionCookie(t, store, user.ID))
+	req := newCSRFPost(t, fmt.Sprintf("%s/-/dashboard/repos/%d/delete", ts.URL, repo.ID), url.Values{}, store, user.ID)
 
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -479,12 +491,7 @@ func TestDashboardRepoSync(t *testing.T) {
 		t.Fatalf("CreateRepo: %v", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost,
-		fmt.Sprintf("%s/-/dashboard/repos/%d/sync", ts.URL, repo.ID), nil)
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	req.AddCookie(newSessionCookie(t, store, user.ID))
+	req := newCSRFPost(t, fmt.Sprintf("%s/-/dashboard/repos/%d/sync", ts.URL, repo.ID), url.Values{}, store, user.ID)
 
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -518,13 +525,7 @@ func TestDashboardRepoNew_POST_MissingField(t *testing.T) {
 		"repo_name": {"docs"},
 	}
 
-	req, err := http.NewRequest(http.MethodPost, ts.URL+"/-/dashboard/repos/new",
-		strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(newSessionCookie(t, store, user.ID))
+	req := newCSRFPost(t, ts.URL+"/-/dashboard/repos/new", form, store, user.ID)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

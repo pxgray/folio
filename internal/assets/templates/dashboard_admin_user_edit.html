@@ -10,6 +10,7 @@
   {{end}}
 
   <form method="POST" action="/-/dashboard/admin/users/{{.Target.ID}}">
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
     <label>Name
       <input type="text" name="name" value="{{.Target.Name}}" required>
     </label>

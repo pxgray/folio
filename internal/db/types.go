@@ -23,6 +23,7 @@ type Session struct {
 	UserID    int64
 	ExpiresAt time.Time
 	CreatedAt time.Time
+	CSRFToken string
 }
 
 type Repo struct {
