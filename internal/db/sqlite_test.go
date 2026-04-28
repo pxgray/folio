@@ -57,14 +57,27 @@ func TestUserCRUD(t *testing.T) {
 		t.Errorf("GetUserByEmail ID mismatch")
 	}
 
-	// UpdateUser
+	// UpdateUser without password preserves existing password
 	u.Name = "Alice Updated"
-	if err := s.UpdateUser(ctx, u); err != nil {
-		t.Fatalf("UpdateUser: %v", err)
+	if err := s.UpdateUser(ctx, u, nil); err != nil {
+		t.Fatalf("UpdateUser nil password: %v", err)
 	}
 	got3, _ := s.GetUserByID(ctx, u.ID)
 	if got3.Name != "Alice Updated" {
-		t.Errorf("UpdateUser did not persist: %q", got3.Name)
+		t.Errorf("UpdateUser did not persist name: %q", got3.Name)
+	}
+	if got3.Password != "" {
+		t.Errorf("expected empty password after nil update, got %q", got3.Password)
+	}
+
+	// UpdateUser with password updates it
+	pw := "newhashedpassword"
+	if err := s.UpdateUser(ctx, u, &pw); err != nil {
+		t.Fatalf("UpdateUser with password: %v", err)
+	}
+	got4, _ := s.GetUserByID(ctx, u.ID)
+	if got4.Password != pw {
+		t.Errorf("UpdateUser with password: expected %q, got %q", pw, got4.Password)
 	}
 
 	// ListUsers

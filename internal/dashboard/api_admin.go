@@ -96,16 +96,18 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if body.IsAdmin != nil {
 		target.IsAdmin = *body.IsAdmin
 	}
+
+	var pwHash *string
 	if body.Password != nil && *body.Password != "" {
 		hashed, err := auth.HashPassword(*body.Password)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to hash password"})
 			return
 		}
-		target.Password = hashed
+		pwHash = &hashed
 	}
 
-	if err := s.dbStore.UpdateUser(ctx, target); err != nil {
+	if err := s.dbStore.UpdateUser(ctx, target, pwHash); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update user"})
 		return
 	}

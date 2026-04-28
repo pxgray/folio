@@ -40,7 +40,7 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 	// Update display name if provided.
 	if name := strings.TrimSpace(r.FormValue("display_name")); name != "" {
 		user.Name = name
-		if err := s.dbStore.UpdateUser(r.Context(), user); err != nil {
+		if err := s.dbStore.UpdateUser(r.Context(), user, nil); err != nil {
 			s.renderSettingsError(w, r, user, "Failed to update name: "+err.Error())
 			return
 		}
@@ -62,8 +62,7 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 			s.renderSettingsError(w, r, user, "Failed to hash password.")
 			return
 		}
-		user.Password = hash
-		if err := s.dbStore.UpdateUser(r.Context(), user); err != nil {
+		if err := s.dbStore.UpdateUser(r.Context(), user, &hash); err != nil {
 			s.renderSettingsError(w, r, user, "Failed to save password: "+err.Error())
 			return
 		}

@@ -90,16 +90,17 @@ func (s *Server) handleAdminUserEditPost(w http.ResponseWriter, r *http.Request)
 		target.IsAdmin = r.FormValue("is_admin") == "true"
 	}
 
+	var pwHash *string
 	if pw := r.FormValue("password"); pw != "" {
 		hashed, err := auth.HashPassword(pw)
 		if err != nil {
 			http.Error(w, "failed to hash password", http.StatusInternalServerError)
 			return
 		}
-		target.Password = hashed
+		pwHash = &hashed
 	}
 
-	if err := s.dbStore.UpdateUser(ctx, target); err != nil {
+	if err := s.dbStore.UpdateUser(ctx, target, pwHash); err != nil {
 		data := adminUserEditData{
 			Title:   "Admin — Edit User",
 			IsAdmin: true,
@@ -187,7 +188,7 @@ func (s *Server) handleAdminToggleAdmin(w http.ResponseWriter, r *http.Request) 
 	}
 
 	target.IsAdmin = !target.IsAdmin
-	s.dbStore.UpdateUser(ctx, target)
+	s.dbStore.UpdateUser(ctx, target, nil)
 
 	setFlash(w, "Admin status updated.")
 	http.Redirect(w, r, "/-/dashboard/admin/", http.StatusSeeOther)

@@ -158,10 +158,16 @@ func (s *SQLiteStore) GetUserByEmail(ctx context.Context, email string) (*User, 
 	return scanUser(row)
 }
 
-func (s *SQLiteStore) UpdateUser(ctx context.Context, u *User) error {
+func (s *SQLiteStore) UpdateUser(ctx context.Context, u *User, password *string) error {
+	if password != nil {
+		_, err := s.db.ExecContext(ctx,
+			`UPDATE users SET email=?, name=?, password=?, is_admin=? WHERE id=?`,
+			u.Email, u.Name, *password, u.IsAdmin, u.ID)
+		return err
+	}
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE users SET email=?, name=?, password=?, is_admin=? WHERE id=?`,
-		u.Email, u.Name, nullString(u.Password), u.IsAdmin, u.ID)
+		`UPDATE users SET email=?, name=?, is_admin=? WHERE id=?`,
+		u.Email, u.Name, u.IsAdmin, u.ID)
 	return err
 }
 
