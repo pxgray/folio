@@ -46,7 +46,7 @@ func (t *LinkRewriter) Transform(doc *ast.Document, reader text.Reader, pc parse
 }
 
 func (t *LinkRewriter) rewrite(dest string) string {
-	if isAbsoluteURL(dest) || isFragmentOnly(dest) || strings.HasPrefix(dest, "/") {
+	if isAbsoluteURL(dest) || strings.HasPrefix(dest, "/") {
 		return dest
 	}
 
