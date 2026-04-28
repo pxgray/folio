@@ -158,6 +158,31 @@ func (s *SQLiteStore) GetUserByEmail(ctx context.Context, email string) (*User, 
 	return scanUser(row)
 }
 
+func (s *SQLiteStore) DemoteAdmin(ctx context.Context, userID int64) (int64, error) {
+	var isAdmin bool
+	err := s.db.QueryRowContext(ctx, `SELECT is_admin FROM users WHERE id = ?`, userID).Scan(&isAdmin)
+	if err != nil {
+		return 0, err
+	}
+	if !isAdmin {
+		return 0, nil
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE users SET is_admin = 0 WHERE id = ? AND (SELECT COUNT(*) FROM users WHERE is_admin = 1) > 1`,
+		userID)
+	if err != nil {
+		return 0, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if affected == 0 {
+		return 0, ErrLastAdmin
+	}
+	return affected, nil
+}
+
 func (s *SQLiteStore) UpdateUser(ctx context.Context, u *User, password *string) error {
 	if password != nil {
 		_, err := s.db.ExecContext(ctx,

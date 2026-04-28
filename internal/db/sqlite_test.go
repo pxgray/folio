@@ -3,6 +3,8 @@ package db_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -373,5 +375,151 @@ func TestArtifacts(t *testing.T) {
 	got2, _ := s.GetRepoArtifacts(ctx, repo.ID)
 	if len(got2) != 1 || got2["new"] != "/new" {
 		t.Errorf("expected replace-all, got: %v", got2)
+	}
+}
+
+func TestDemoteAdmin(t *testing.T) {
+	ctx := context.Background()
+	s := openTestDB(t)
+
+	// Create 3 admins
+	admin1 := &db.User{Email: "a1@example.com", Name: "Admin1", IsAdmin: true}
+	_ = s.CreateUser(ctx, admin1)
+	admin2 := &db.User{Email: "a2@example.com", Name: "Admin2", IsAdmin: true}
+	_ = s.CreateUser(ctx, admin2)
+	admin3 := &db.User{Email: "a3@example.com", Name: "Admin3", IsAdmin: true}
+	_ = s.CreateUser(ctx, admin3)
+
+	// Demoting one admin should succeed (3 admins → 2)
+	affected, err := s.DemoteAdmin(ctx, admin1.ID)
+	if err != nil {
+		t.Fatalf("DemoteAdmin: %v", err)
+	}
+	if affected != 1 {
+		t.Errorf("expected affected=1, got %d", affected)
+	}
+	got1, _ := s.GetUserByID(ctx, admin1.ID)
+	if got1.IsAdmin {
+		t.Error("expected admin1 to be non-admin after demote")
+	}
+
+	// Demoting another should succeed (2 admins → 1)
+	affected, err = s.DemoteAdmin(ctx, admin2.ID)
+	if err != nil {
+		t.Fatalf("DemoteAdmin: %v", err)
+	}
+	if affected != 1 {
+		t.Errorf("expected affected=1, got %d", affected)
+	}
+	got2, _ := s.GetUserByID(ctx, admin2.ID)
+	if got2.IsAdmin {
+		t.Error("expected admin2 to be non-admin after demote")
+	}
+
+	// Demoting the last admin should fail with ErrLastAdmin
+	affected, err = s.DemoteAdmin(ctx, admin3.ID)
+	if !errors.Is(err, db.ErrLastAdmin) {
+		t.Fatalf("expected ErrLastAdmin, got %v (affected=%d)", err, affected)
+	}
+	got3, _ := s.GetUserByID(ctx, admin3.ID)
+	if !got3.IsAdmin {
+		t.Error("expected admin3 to still be admin (last admin protection)")
+	}
+}
+
+func TestDemoteAdmin_NonAdmin(t *testing.T) {
+	ctx := context.Background()
+	s := openTestDB(t)
+
+	// Create one admin and one regular user
+	admin := &db.User{Email: "admin@example.com", Name: "Admin", IsAdmin: true}
+	_ = s.CreateUser(ctx, admin)
+	regular := &db.User{Email: "user@example.com", Name: "User"}
+	_ = s.CreateUser(ctx, regular)
+
+	// Demoting a non-admin should do nothing (no rows affected)
+	affected, err := s.DemoteAdmin(ctx, regular.ID)
+	if err != nil {
+		t.Fatalf("DemoteAdmin: %v", err)
+	}
+	if affected != 0 {
+		t.Errorf("expected affected=0 for non-admin, got %d", affected)
+	}
+}
+
+func TestDemoteAdmin_LastAdmin(t *testing.T) {
+	ctx := context.Background()
+	s := openTestDB(t)
+
+	// Create exactly one admin
+	admin := &db.User{Email: "admin@example.com", Name: "Admin", IsAdmin: true}
+	_ = s.CreateUser(ctx, admin)
+
+	affected, err := s.DemoteAdmin(ctx, admin.ID)
+	if !errors.Is(err, db.ErrLastAdmin) {
+		t.Fatalf("expected ErrLastAdmin, got %v (affected=%d)", err, affected)
+	}
+}
+
+func TestDemoteAdmin_Concurrent(t *testing.T) {
+	ctx := context.Background()
+	s := openTestDB(t)
+
+	// Create 3 admins
+	for i := 0; i < 3; i++ {
+		u := &db.User{
+			Email:   fmt.Sprintf("admin%d@example.com", i),
+			Name:    fmt.Sprintf("Admin%d", i),
+			IsAdmin: true,
+		}
+		_ = s.CreateUser(ctx, u)
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var errs []error
+	numGoroutines := 20
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			affected, err := s.DemoteAdmin(ctx, int64(idx%3+1))
+			if err != nil {
+				if errors.Is(err, db.ErrLastAdmin) {
+					return // expected
+				}
+				mu.Lock()
+				errs = append(errs, fmt.Errorf("goroutine %d: %w", idx, err))
+				mu.Unlock()
+				return
+			}
+			// affected=1 means we demoted this user; affected=0 means another
+			// goroutine already demoted them — both are valid outcomes.
+			if affected != 1 && affected != 0 {
+				mu.Lock()
+				errs = append(errs, fmt.Errorf("goroutine %d: expected affected=0 or 1, got %d", idx, affected))
+				mu.Unlock()
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	if len(errs) > 0 {
+		for _, e := range errs {
+			t.Error(e)
+		}
+	}
+
+	// Exactly 1 admin should remain
+	users, _ := s.ListUsers(ctx)
+	adminCount := 0
+	for _, u := range users {
+		if u.IsAdmin {
+			adminCount++
+		}
+	}
+	if adminCount != 1 {
+		t.Errorf("expected exactly 1 admin remaining, got %d", adminCount)
 	}
 }

@@ -16,6 +16,7 @@ type Store interface {
 	CreateUser(ctx context.Context, u *User) error
 	GetUserByID(ctx context.Context, id int64) (*User, error)
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
+	DemoteAdmin(ctx context.Context, userID int64) (int64, error)
 	UpdateUser(ctx context.Context, u *User, password *string) error
 	DeleteUser(ctx context.Context, id int64) error
 	ListUsers(ctx context.Context) ([]*User, error)

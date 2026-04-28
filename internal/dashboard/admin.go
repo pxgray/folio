@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -183,24 +184,29 @@ func (s *Server) handleAdminToggleAdmin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Guard: demoting last admin.
 	if target.IsAdmin {
-		users, _ := s.dbStore.ListUsers(ctx)
-		adminCount := 0
-		for _, u := range users {
-			if u.IsAdmin {
-				adminCount++
+		affected, err := s.dbStore.DemoteAdmin(ctx, targetID)
+		if err != nil {
+			if errors.Is(err, db.ErrLastAdmin) {
+				setFlash(w, "Cannot demote the last admin.")
+				http.Redirect(w, r, "/-/dashboard/admin/", http.StatusSeeOther)
+				return
 			}
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
 		}
-		if adminCount <= 1 {
+		if affected == 0 {
 			setFlash(w, "Cannot demote the last admin.")
 			http.Redirect(w, r, "/-/dashboard/admin/", http.StatusSeeOther)
 			return
 		}
+	} else {
+		target.IsAdmin = true
+		if err := s.dbStore.UpdateUser(ctx, target, nil); err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 	}
-
-	target.IsAdmin = !target.IsAdmin
-	s.dbStore.UpdateUser(ctx, target, nil)
 
 	setFlash(w, "Admin status updated.")
 	http.Redirect(w, r, "/-/dashboard/admin/", http.StatusSeeOther)

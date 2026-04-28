@@ -1,6 +1,11 @@
 package db
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var ErrLastAdmin = errors.New("db: cannot demote the last admin")
 
 type User struct {
 	ID        int64
