@@ -1,16 +1,24 @@
 package dashboard
 
 import (
+	"context"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math/big"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/pxgray/folio/internal/auth"
 	"github.com/pxgray/folio/internal/db"
+	"golang.org/x/oauth2"
 )
 
 func (s *Server) handleLoginGet(w http.ResponseWriter, r *http.Request) {
@@ -267,7 +275,7 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract profile from the OpenID Connect id_token JWT.
-	profile, err := parseGoogleIDToken(token)
+	profile, err := parseGoogleIDToken(ctx, token, clientID)
 	if err != nil {
 		http.Redirect(w, r, "/-/auth/login?error=google_profile_failed", http.StatusFound)
 		return
@@ -319,38 +327,196 @@ func (s *Server) createSessionAndRedirect(w http.ResponseWriter, r *http.Request
 		SameSite: http.SameSiteLaxMode,
 	})
 
+	http.SetCookie(w, &http.Cookie{
+		Name:     "_csrf",
+		Value:    session.CSRFToken,
+		Path:     "/",
+		HttpOnly: false,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
 	http.Redirect(w, r, "/-/dashboard/", http.StatusFound)
 }
 
-// parseGoogleIDToken extracts the user profile from the OpenID Connect id_token
-// embedded in the token response. The id_token is a JWT; we base64-decode the
-// payload (middle section) without verifying the signature, which is acceptable
-// for this server-side flow where the token was received directly from Google.
-func parseGoogleIDToken(token interface{ Extra(string) interface{} }) (*auth.OAuthProfile, error) {
-	raw, _ := token.Extra("id_token").(string)
-	if raw == "" {
+// jwksCache caches Google's public keys for JWT verification.
+var jwksCache struct {
+	sync.RWMutex
+	keys     []*rsa.PublicKey
+	kids     []string
+	fetched  time.Time
+	expires  time.Duration
+	once     sync.Once
+}
+
+const jwksExpiry = 6 * time.Hour
+
+type jwksResponse struct {
+	Keys []jwksKey `json:"keys"`
+}
+
+type jwksKey struct {
+	Kty string `json:"kty"`
+	Kid string `json:"kid"`
+	N   string `json:"n"`
+	E   string `json:"e"`
+}
+
+func initJWKS() {
+	jwksCache.expires = jwksExpiry
+}
+
+func fetchJWKS(ctx context.Context) ([]*rsa.PublicKey, []string, error) {
+	jwksCache.once.Do(initJWKS)
+
+	jwksCache.RLock()
+	if time.Since(jwksCache.fetched) < jwksCache.expires && len(jwksCache.keys) > 0 {
+		keys := make([]*rsa.PublicKey, len(jwksCache.keys))
+		copy(keys, jwksCache.keys)
+		kids := make([]string, len(jwksCache.kids))
+		copy(kids, jwksCache.kids)
+		jwksCache.RUnlock()
+		return keys, kids, nil
+	}
+	jwksCache.RUnlock()
+
+	jwksCache.Lock()
+	defer jwksCache.Unlock()
+
+	if time.Since(jwksCache.fetched) < jwksCache.expires && len(jwksCache.keys) > 0 {
+		keys := make([]*rsa.PublicKey, len(jwksCache.keys))
+		copy(keys, jwksCache.keys)
+		kids := make([]string, len(jwksCache.kids))
+		copy(kids, jwksCache.kids)
+		return keys, kids, nil
+	}
+
+	resp, err := http.Get("https://www.googleapis.com/oauth2/v3/certs")
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetch JWKS: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, fmt.Errorf("fetch JWKS: HTTP %d", resp.StatusCode)
+	}
+
+	var jwks jwksResponse
+	if err := json.NewDecoder(resp.Body).Decode(&jwks); err != nil {
+		return nil, nil, fmt.Errorf("decode JWKS: %w", err)
+	}
+
+	keys := make([]*rsa.PublicKey, 0, len(jwks.Keys))
+	kids := make([]string, 0, len(jwks.Keys))
+	for _, k := range jwks.Keys {
+		nBytes, err := base64.RawURLEncoding.DecodeString(k.N)
+		if err != nil {
+			continue
+		}
+		eBytes, err := base64.RawURLEncoding.DecodeString(k.E)
+		if err != nil {
+			continue
+		}
+		e := new(big.Int).SetBytes(eBytes)
+		n := new(big.Int).SetBytes(nBytes)
+		rsaKey := &rsa.PublicKey{N: n, E: int(e.Int64())}
+		keys = append(keys, rsaKey)
+		kids = append(kids, k.Kid)
+	}
+
+	jwksCache.keys = keys
+	jwksCache.kids = kids
+	jwksCache.fetched = time.Now()
+
+	return keys, kids, nil
+}
+
+// parseGoogleIDToken verifies and extracts the user profile from the Google
+// OpenID Connect id_token. The token signature, audience, issuer, and expiry
+// are all verified.
+func parseGoogleIDToken(ctx context.Context, token *oauth2.Token, clientID string) (*auth.OAuthProfile, error) {
+	raw := token.Extra("id_token")
+	rawStr, ok := raw.(string)
+	if !ok || rawStr == "" {
 		return nil, errors.New("parseGoogleIDToken: id_token missing from token response")
 	}
 
-	// JWT is three base64url-encoded sections separated by ".".
-	// We only need the payload (index 1).
-	parts := splitJWT(raw)
+	// Split JWT into header, payload, signature.
+	parts := strings.Split(rawStr, ".")
 	if len(parts) != 3 {
 		return nil, errors.New("parseGoogleIDToken: malformed JWT")
 	}
 
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	// Decode and verify header.
+	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return nil, errors.New("parseGoogleIDToken: base64 decode: " + err.Error())
+		return nil, errors.New("parseGoogleIDToken: base64 decode header: " + err.Error())
+	}
+	var header struct {
+		Alg string `json:"alg"`
+		Kid string `json:"kid"`
+	}
+	if err := json.Unmarshal(headerBytes, &header); err != nil {
+		return nil, errors.New("parseGoogleIDToken: parse header: " + err.Error())
+	}
+	if header.Alg != "RS256" {
+		return nil, errors.New("parseGoogleIDToken: unsupported algorithm: " + header.Alg)
 	}
 
-	var claims struct {
-		Sub   string `json:"sub"`
-		Email string `json:"email"`
-		Name  string `json:"name"`
+	// Decode payload.
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, errors.New("parseGoogleIDToken: base64 decode payload: " + err.Error())
 	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return nil, errors.New("parseGoogleIDToken: json unmarshal: " + err.Error())
+
+	// Verify signature against Google's public keys.
+	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return nil, errors.New("parseGoogleIDToken: base64 decode signature: " + err.Error())
+	}
+
+	keys, kids, err := fetchJWKS(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("parseGoogleIDToken: fetch keys: %w", err)
+	}
+
+	var verified bool
+	for i, key := range keys {
+		if header.Kid != "" && kids[i] != header.Kid {
+			continue
+		}
+		hashed := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+		if err := rsa.VerifyPKCS1v15(key, 0, hashed[:], signature); err == nil {
+			verified = true
+			break
+		}
+	}
+	if !verified {
+		return nil, errors.New("parseGoogleIDToken: signature verification failed")
+	}
+
+	// Verify claims.
+	var claims struct {
+		Sub    string `json:"sub"`
+		Email  string `json:"email"`
+		Name   string `json:"name"`
+		Aud    string `json:"aud"`
+		Iss    string `json:"iss"`
+		Exp    int64  `json:"exp"`
+		Iat    int64  `json:"iat"`
+		AuthTime int64 `json:"auth_time"`
+	}
+	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
+		return nil, errors.New("parseGoogleIDToken: parse claims: " + err.Error())
+	}
+	if claims.Aud != clientID {
+		return nil, errors.New("parseGoogleIDToken: audience mismatch")
+	}
+	if claims.Iss != "accounts.google.com" && claims.Iss != "https://accounts.google.com" {
+		return nil, errors.New("parseGoogleIDToken: invalid issuer")
+	}
+	if time.Now().After(time.Unix(claims.Exp, 0)) {
+		return nil, errors.New("parseGoogleIDToken: token expired")
 	}
 	if claims.Sub == "" {
 		return nil, errors.New("parseGoogleIDToken: sub claim missing")
@@ -361,20 +527,6 @@ func parseGoogleIDToken(token interface{ Extra(string) interface{} }) (*auth.OAu
 		Email:      claims.Email,
 		Name:       claims.Name,
 	}, nil
-}
-
-// splitJWT splits a JWT string on "." without importing strings to keep imports tidy.
-func splitJWT(s string) []string {
-	var parts []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '.' {
-			parts = append(parts, s[start:i])
-			start = i + 1
-		}
-	}
-	parts = append(parts, s[start:])
-	return parts
 }
 
 // generateState returns a 16-byte cryptographically random state token as hex.
