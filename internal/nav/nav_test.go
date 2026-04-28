@@ -175,10 +175,10 @@ func TestFindActiveSection(t *testing.T) {
 	}
 
 	cases := []struct {
-		filePath            string
-		wantSectionLabel    string
-		wantIndex           int
-		wantFound           bool
+		filePath         string
+		wantSectionLabel string
+		wantIndex        int
+		wantFound        bool
 	}{
 		{"docs/index.md", "Docs", 0, true},
 		{"docs/getting-started.md", "Docs", 0, true},

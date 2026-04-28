@@ -342,11 +342,11 @@ func (s *Server) createSessionAndRedirect(w http.ResponseWriter, r *http.Request
 // jwksCache caches Google's public keys for JWT verification.
 var jwksCache struct {
 	sync.RWMutex
-	keys     []*rsa.PublicKey
-	kids     []string
-	fetched  time.Time
-	expires  time.Duration
-	once     sync.Once
+	keys    []*rsa.PublicKey
+	kids    []string
+	fetched time.Time
+	expires time.Duration
+	once    sync.Once
 }
 
 const jwksExpiry = 6 * time.Hour
@@ -497,14 +497,14 @@ func parseGoogleIDToken(ctx context.Context, token *oauth2.Token, clientID strin
 
 	// Verify claims.
 	var claims struct {
-		Sub    string `json:"sub"`
-		Email  string `json:"email"`
-		Name   string `json:"name"`
-		Aud    string `json:"aud"`
-		Iss    string `json:"iss"`
-		Exp    int64  `json:"exp"`
-		Iat    int64  `json:"iat"`
-		AuthTime int64 `json:"auth_time"`
+		Sub      string `json:"sub"`
+		Email    string `json:"email"`
+		Name     string `json:"name"`
+		Aud      string `json:"aud"`
+		Iss      string `json:"iss"`
+		Exp      int64  `json:"exp"`
+		Iat      int64  `json:"iat"`
+		AuthTime int64  `json:"auth_time"`
 	}
 	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
 		return nil, errors.New("parseGoogleIDToken: parse claims: " + err.Error())
