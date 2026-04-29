@@ -126,14 +126,40 @@ func main() {
 			}
 		}
 
+		// Register local repos from DB with the gitstore.
+		localRepos, err := store.ListAllRepos(ctx)
+		if err != nil {
+			log.Fatalf("folio: list repos for local registration: %v", err)
+		}
+		for _, r := range localRepos {
+			if r.RepoType != "local" {
+				continue
+			}
+			if _, err := os.Stat(r.Path); err != nil {
+				log.Printf("folio: skipping local repo %q: path %q not accessible: %v", r.Label, r.Path, err)
+				continue
+			}
+			gitStore.RegisterLocal(r.Label, r.Path)
+			log.Printf("folio: registered local repo %q at %s", r.Label, r.Path)
+		}
+
 		docSrv, err = web.New(store, gitStore, assets.TemplateFS, staticFS)
+		if err != nil {
+			log.Fatalf("folio: web.New: %v", err)
+		}
+		docHandler = docSrv.Handler()
+	} else {
+		// Even without a gitStore, initialize the web server so the
+		// root index and doc routes work.  Repos will be populated
+		// later via the dashboard.
+		docSrv, err = web.New(store, nil, assets.TemplateFS, staticFS)
 		if err != nil {
 			log.Fatalf("folio: web.New: %v", err)
 		}
 		docHandler = docSrv.Handler()
 	}
 
-	dashSrv := dashboard.New(store, gitStore, authn, docSrv, assets.TemplateFS, setupComplete)
+	dashSrv := dashboard.New(store, gitStore, authn, docSrv, assets.TemplateFS, staticFS, setupComplete)
 	dashHandler := dashSrv.Handler()
 
 	staticHandler := http.StripPrefix("/-/static/", http.FileServer(http.FS(staticFS)))
