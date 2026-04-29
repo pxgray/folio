@@ -9,34 +9,67 @@
         action="{{if .Repo}}/-/dashboard/repos/{{.Repo.ID}}{{else}}/-/dashboard/repos/new{{end}}">
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
 
-    <label>Host
-      <input type="text" name="host" required
-             value="{{if .Repo}}{{.Repo.Host}}{{end}}">
-    </label>
+    <fieldset class="repo-type-toggle">
+      <legend>Repo Type</legend>
+      <label>
+        <input type="radio" name="repo_type" value="remote"
+          {{if eq .RepoType "remote"}}checked{{end}}>
+        Remote
+      </label>
+      <label>
+        <input type="radio" name="repo_type" value="local"
+          {{if eq .RepoType "local"}}checked{{end}}>
+        Local
+      </label>
+    </fieldset>
 
-    <label>Owner
-      <input type="text" name="owner" required
-             value="{{if .Repo}}{{.Repo.RepoOwner}}{{end}}">
-    </label>
+    <div id="remote-fields">
+      <label>Host
+        <input type="text" name="host" required
+          {{if eq .RepoType "local"}}disabled{{end}}
+          value="{{if .Repo}}{{.Repo.Host}}{{end}}">
+      </label>
 
-    <label>Repo Name
-      <input type="text" name="repo_name" required
-             value="{{if .Repo}}{{.Repo.RepoName}}{{end}}">
-    </label>
+      <label>Owner
+        <input type="text" name="owner" required
+          {{if eq .RepoType "local"}}disabled{{end}}
+          value="{{if .Repo}}{{.Repo.RepoOwner}}{{end}}">
+      </label>
 
-    <label>Remote URL <small>(optional override)</small>
-      <input type="url" name="remote_url"
-             value="{{if .Repo}}{{.Repo.RemoteURL}}{{end}}">
-    </label>
+      <label>Repo Name
+        <input type="text" name="repo_name" required
+          {{if eq .RepoType "local"}}disabled{{end}}
+          value="{{if .Repo}}{{.Repo.RepoName}}{{end}}">
+      </label>
 
-    <label>Webhook Secret <small>(optional)</small>
-      <input type="text" name="webhook_secret"
-             value="{{if .Repo}}{{.Repo.WebhookSecret}}{{end}}">
-    </label>
+      <label>Remote URL <small>(optional override)</small>
+        <input type="url" name="remote_url"
+          {{if eq .RepoType "local"}}disabled{{end}}
+          value="{{if .Repo}}{{.Repo.RemoteURL}}{{end}}">
+      </label>
+
+      <label>Webhook Secret <small>(optional)</small>
+        <input type="text" name="webhook_secret"
+          {{if eq .RepoType "local"}}disabled{{end}}
+          value="{{if .Repo}}{{.Repo.WebhookSecret}}{{end}}">
+      </label>
+    </div>
+
+    <div id="local-fields" style="display:none;">
+      <label>Label
+        <input type="text" name="label" required
+          value="{{if .Repo}}{{.Repo.Label}}{{end}}">
+      </label>
+
+      <label>Path
+        <input type="text" name="path" required
+          value="{{if .Repo}}{{.Repo.Path}}{{end}}">
+      </label>
+    </div>
 
     <label>
       <input type="checkbox" name="trusted_html"
-             {{if .Repo}}{{if .Repo.TrustedHTML}}checked{{end}}{{end}}>
+        {{if .Repo}}{{if .Repo.TrustedHTML}}checked{{end}}{{end}}>
       Trust raw HTML in Markdown
     </label>
 
@@ -49,6 +82,7 @@
   {{if .Repo}}
   <hr>
 
+  {{if and .Repo (eq .RepoType "remote")}}
   {{if .WebhookURL}}
   <section>
     <h2>Webhook URL</h2>
@@ -69,5 +103,44 @@
     </form>
   </section>
   {{end}}
+
+  {{if and .Repo (eq .RepoType "local")}}
+  <section class="local-info">
+    <h2>Local Repo</h2>
+    <p>Path: <code>{{.Repo.Path}}</code></p>
+    <p>URL: <code>/local/{{.Repo.Label}}</code></p>
+    <form method="post" action="/-/dashboard/repos/{{.Repo.ID}}/delete" style="display:inline">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <button type="submit" class="btn btn-danger"
+        onclick="return confirm('Delete this repo? This cannot be undone.')">Delete</button>
+    </form>
+  </section>
+  {{end}}
+  {{end}}
 </div>
+
+<script>
+(function() {
+  var radios = document.querySelectorAll('input[name="repo_type"]');
+  var remoteFields = document.getElementById('remote-fields');
+  var localFields = document.getElementById('local-fields');
+
+  function toggle() {
+    var isLocal = false;
+    for (var i = 0; i < radios.length; i++) {
+      if (radios[i].checked && radios[i].value === 'local') {
+        isLocal = true;
+        break;
+      }
+    }
+    remoteFields.style.display = isLocal ? 'none' : '';
+    localFields.style.display = isLocal ? '' : 'none';
+  }
+
+  for (var i = 0; i < radios.length; i++) {
+    radios[i].addEventListener('change', toggle);
+  }
+  toggle();
+})();
+</script>
 {{end}}

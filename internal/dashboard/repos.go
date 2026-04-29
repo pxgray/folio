@@ -34,6 +34,7 @@ type repoFormData struct {
 	Error      string
 	WebhookURL string // only populated on edit page
 	CSRFToken  string
+	RepoType   string // "remote" or "local" — defaults to "remote"
 }
 
 func (s *Server) handleRepoList(w http.ResponseWriter, r *http.Request) {
@@ -59,6 +60,7 @@ func (s *Server) handleRepoNew(w http.ResponseWriter, r *http.Request) {
 		Title:     "Add Repo",
 		IsAdmin:   user.IsAdmin,
 		User:      user,
+		RepoType:  "remote",
 		CSRFToken: csrfTokenFromContext(r),
 	})
 }
@@ -70,32 +72,68 @@ func (s *Server) handleRepoCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	host := strings.TrimSpace(r.FormValue("host"))
-	owner := strings.TrimSpace(r.FormValue("owner"))
-	repoName := strings.TrimSpace(r.FormValue("repo_name"))
-
-	if host == "" || owner == "" || repoName == "" {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
-			Title:     "Add Repo",
-			IsAdmin:   user.IsAdmin,
-			User:      user,
-			Error:     "Host, Owner, and Repo Name are required.",
-			CSRFToken: csrfTokenFromContext(r),
-		})
-		return
+	repoType := strings.TrimSpace(r.FormValue("repo_type"))
+	if repoType == "" {
+		repoType = "remote"
 	}
 
-	repo := &db.Repo{
-		OwnerID:       user.ID,
-		Host:          host,
-		RepoOwner:     owner,
-		RepoName:      repoName,
-		RemoteURL:     strings.TrimSpace(r.FormValue("remote_url")),
-		WebhookSecret: strings.TrimSpace(r.FormValue("webhook_secret")),
-		TrustedHTML:   r.FormValue("trusted_html") == "on",
-		Status:        db.RepoStatusPending,
+	var repo *db.Repo
+
+	if repoType == "local" {
+		label := strings.TrimSpace(r.FormValue("label"))
+		path := strings.TrimSpace(r.FormValue("path"))
+
+		if label == "" || path == "" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
+				Title:     "Add Repo",
+				IsAdmin:   user.IsAdmin,
+				User:      user,
+				Error:     "Label and Path are required.",
+				RepoType:  "local",
+				CSRFToken: csrfTokenFromContext(r),
+			})
+			return
+		}
+
+		repo = &db.Repo{
+			OwnerID:     user.ID,
+			RepoType:    "local",
+			Label:       label,
+			Path:        path,
+			TrustedHTML: r.FormValue("trusted_html") == "on",
+			Status:      db.RepoStatusReady,
+		}
+	} else {
+		host := strings.TrimSpace(r.FormValue("host"))
+		owner := strings.TrimSpace(r.FormValue("owner"))
+		repoName := strings.TrimSpace(r.FormValue("repo_name"))
+
+		if host == "" || owner == "" || repoName == "" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
+				Title:     "Add Repo",
+				IsAdmin:   user.IsAdmin,
+				User:      user,
+				Error:     "Host, Owner, and Repo Name are required.",
+				RepoType:  "remote",
+				CSRFToken: csrfTokenFromContext(r),
+			})
+			return
+		}
+
+		repo = &db.Repo{
+			OwnerID:       user.ID,
+			Host:          host,
+			RepoOwner:     owner,
+			RepoName:      repoName,
+			RemoteURL:     strings.TrimSpace(r.FormValue("remote_url")),
+			WebhookSecret: strings.TrimSpace(r.FormValue("webhook_secret")),
+			TrustedHTML:   r.FormValue("trusted_html") == "on",
+			Status:        db.RepoStatusPending,
+		}
 	}
+
 	if err := s.dbStore.CreateRepo(r.Context(), repo); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
@@ -103,13 +141,14 @@ func (s *Server) handleRepoCreate(w http.ResponseWriter, r *http.Request) {
 			IsAdmin:   user.IsAdmin,
 			User:      user,
 			Error:     "Could not create repo: " + err.Error(),
+			RepoType:  repoType,
 			CSRFToken: csrfTokenFromContext(r),
 		})
 		return
 	}
 
-	// Trigger background clone if gitStore is available.
-	if s.gitStore != nil {
+	// Trigger background clone for remote repos.
+	if repoType == "remote" && s.gitStore != nil {
 		repoID := repo.ID
 		repoHost := repo.Host
 		repoOwner := repo.RepoOwner
@@ -135,7 +174,7 @@ func (s *Server) handleRepoCreate(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
-	setFlash(w, "Repo added — cloning in background.")
+	setFlash(w, "Repo added.")
 	http.Redirect(w, r, "/-/dashboard/", http.StatusSeeOther)
 }
 
@@ -163,6 +202,10 @@ func (s *Server) handleRepoEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+	repoType := repo.RepoType
+	if repoType == "" {
+		repoType = "remote"
+	}
 	webhookURL := fmt.Sprintf("/%s/%s/%s/-/webhook", repo.Host, repo.RepoOwner, repo.RepoName)
 	s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
 		Title:      "Edit Repo",
@@ -170,6 +213,7 @@ func (s *Server) handleRepoEdit(w http.ResponseWriter, r *http.Request) {
 		IsAdmin:    user.IsAdmin,
 		User:       user,
 		Repo:       repo,
+		RepoType:   repoType,
 		WebhookURL: webhookURL,
 		CSRFToken:  csrfTokenFromContext(r),
 	})
@@ -195,27 +239,54 @@ func (s *Server) handleRepoUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	host := strings.TrimSpace(r.FormValue("host"))
-	owner := strings.TrimSpace(r.FormValue("owner"))
-	repoName := strings.TrimSpace(r.FormValue("repo_name"))
-	if host == "" || owner == "" || repoName == "" {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
-			Title:     "Edit Repo",
-			IsAdmin:   user.IsAdmin,
-			User:      user,
-			Repo:      repo,
-			Error:     "Host, Owner, and Repo Name are required.",
-			CSRFToken: csrfTokenFromContext(r),
-		})
-		return
+
+	repoType := repo.RepoType
+	if repoType == "" {
+		repoType = "remote"
 	}
-	repo.Host = host
-	repo.RepoOwner = owner
-	repo.RepoName = repoName
-	repo.RemoteURL = strings.TrimSpace(r.FormValue("remote_url"))
-	repo.WebhookSecret = strings.TrimSpace(r.FormValue("webhook_secret"))
-	repo.TrustedHTML = r.FormValue("trusted_html") == "on"
+
+	if repoType == "local" {
+		path := strings.TrimSpace(r.FormValue("path"))
+		if path == "" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
+				Title:     "Edit Repo",
+				IsAdmin:   user.IsAdmin,
+				User:      user,
+				Repo:      repo,
+				RepoType:  "local",
+				Error:     "Path is required.",
+				CSRFToken: csrfTokenFromContext(r),
+			})
+			return
+		}
+		repo.Path = path
+		repo.TrustedHTML = r.FormValue("trusted_html") == "on"
+	} else {
+		host := strings.TrimSpace(r.FormValue("host"))
+		owner := strings.TrimSpace(r.FormValue("owner"))
+		repoName := strings.TrimSpace(r.FormValue("repo_name"))
+		if host == "" || owner == "" || repoName == "" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
+				Title:     "Edit Repo",
+				IsAdmin:   user.IsAdmin,
+				User:      user,
+				Repo:      repo,
+				RepoType:  "remote",
+				Error:     "Host, Owner, and Repo Name are required.",
+				CSRFToken: csrfTokenFromContext(r),
+			})
+			return
+		}
+		repo.Host = host
+		repo.RepoOwner = owner
+		repo.RepoName = repoName
+		repo.RemoteURL = strings.TrimSpace(r.FormValue("remote_url"))
+		repo.WebhookSecret = strings.TrimSpace(r.FormValue("webhook_secret"))
+		repo.TrustedHTML = r.FormValue("trusted_html") == "on"
+	}
+
 	if err := s.dbStore.UpdateRepo(r.Context(), repo); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		s.renderTemplate(w, "dashboard_repo_form.html", repoFormData{
@@ -223,6 +294,7 @@ func (s *Server) handleRepoUpdate(w http.ResponseWriter, r *http.Request) {
 			IsAdmin:   user.IsAdmin,
 			User:      user,
 			Repo:      repo,
+			RepoType:  repoType,
 			Error:     "Save failed: " + err.Error(),
 			CSRFToken: csrfTokenFromContext(r),
 		})
