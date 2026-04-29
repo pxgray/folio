@@ -51,13 +51,6 @@ func (e RepoEntry) cloneURL() string {
 	return "https://" + e.Host + "/" + e.Owner + "/" + e.Name + ".git"
 }
 
-// LocalEntry describes a local filesystem repo to register with the Store.
-type LocalEntry struct {
-	Label       string
-	Path        string
-	TrustedHTML bool
-}
-
 // AddRepo registers a repo; clones if not on disk, opens if already cloned.
 // No-op (returns nil) if the key is already registered. Thread-safe.
 func (s *Store) AddRepo(ctx context.Context, e RepoEntry) error {
@@ -205,32 +198,6 @@ func (s *Store) RemoveLocal(label string) {
 	s.mu.Lock()
 	delete(s.locals, label)
 	s.mu.Unlock()
-}
-
-// OpenLocals registers local filesystem repos. Should be called once at startup
-// for any TOML-configured local repos (deprecated path; new repos use db.Store).
-// All entries are validated before any are registered (all-or-nothing semantics).
-func (s *Store) OpenLocals(locals []LocalEntry) error {
-	// Validate all entries first, including checking for duplicates within the input.
-	seen := make(map[string]bool, len(locals))
-	for _, lc := range locals {
-		if seen[lc.Label] {
-			return fmt.Errorf("local repo: duplicate label %q", lc.Label)
-		}
-		seen[lc.Label] = true
-		if _, exists := s.locals[lc.Label]; exists {
-			return fmt.Errorf("local repo: duplicate label %q", lc.Label)
-		}
-		if _, err := os.Stat(lc.Path); err != nil {
-			return fmt.Errorf("local repo %q: %w", lc.Label, err)
-		}
-	}
-	// All valid — register them.
-	for _, lc := range locals {
-		s.locals[lc.Label] = newLocalRepo(lc.Path)
-		log.Printf("folio: registered local repo %q at %s", lc.Label, lc.Path)
-	}
-	return nil
 }
 
 // RepoKeys returns the registered host/owner/name keys (used by the index page).
