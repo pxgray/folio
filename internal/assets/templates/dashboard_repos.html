@@ -8,24 +8,45 @@
   {{if .Repos}}
   <table class="dashboard-table">
     <thead>
-      <tr><th>Repo</th><th>Status</th><th>Actions</th></tr>
+      <tr><th>Repo</th><th>Type</th><th>Status</th><th>Actions</th></tr>
     </thead>
     <tbody>
       {{range .Repos}}
       <tr>
-        <td>{{.Host}}/{{.RepoOwner}}/{{.RepoName}}</td>
-        <td><span class="badge badge-{{.Status}}">{{.Status}}</span></td>
+        <td>
+          {{if eq .RepoType "local"}}
+            <a href="/local/{{.Label}}">{{.Label}}</a>
+          {{else}}
+            <a href="/{{.Host}}/{{.RepoOwner}}/{{.RepoName}}">{{.Host}}/{{.RepoOwner}}/{{.RepoName}}</a>
+          {{end}}
+        </td>
+        <td>
+          {{if eq .RepoType "local"}}
+            <span class="badge badge-local">Local</span>
+          {{else}}
+            <span class="badge badge-remote">Remote</span>
+          {{end}}
+        </td>
+        <td>
+          {{if eq .RepoType "local"}}
+            <span class="badge badge-ready">Ready</span>
+          {{else}}
+            <span class="badge badge-{{.Status}}">{{.Status}}</span>
+          {{end}}
+        </td>
         <td>
           <div class="row-actions">
             <a href="/-/dashboard/repos/{{.ID}}" class="btn-icon" title="Edit" aria-label="Edit">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
             </a>
+            {{if eq .RepoType "remote"}}
             <form method="post" action="/-/dashboard/repos/{{.ID}}/sync">
               <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
               <button type="submit" class="btn-icon" title="Sync" aria-label="Sync">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
               </button>
             </form>
+            {{end}}
             <form method="post" action="/-/dashboard/repos/{{.ID}}/delete">
               <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
               <button type="submit" class="btn-icon btn-icon-danger" title="Delete" aria-label="Delete" onclick="return confirm('Delete this repo?')">
