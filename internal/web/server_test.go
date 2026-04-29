@@ -539,3 +539,49 @@ func TestHandleDoc_XSSStripped_Untrusted(t *testing.T) {
 			string(body)[:min(500, len(body))])
 	}
 }
+
+func TestHandleLocalDoc_FromDB(t *testing.T) {
+	localDir := makeTestLocalDir(t)
+
+	dbStore, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+
+	ctx := context.Background()
+	repo := &db.Repo{
+		OwnerID:  1,
+		RepoType: "local",
+		Label:    "dblocal",
+		Path:     localDir,
+		Status:   db.RepoStatusReady,
+	}
+	if err := dbStore.CreateRepo(ctx, repo); err != nil {
+		t.Fatalf("CreateRepo: %v", err)
+	}
+
+	gitStore := gitstore.New(t.TempDir(), 5*time.Minute)
+	gitStore.RegisterLocal("dblocal", localDir)
+
+	staticFS, _ := fs.Sub(assets.StaticFS, "static")
+	srv, err := web.New(dbStore, gitStore, assets.TemplateFS, staticFS)
+	if err != nil {
+		t.Fatalf("web.New: %v", err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/local/dblocal/README.md")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "This is a local repo") {
+		t.Errorf("body missing expected content; got: %q", string(body)[:min(300, len(body))])
+	}
+}
