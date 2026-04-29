@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -35,6 +36,10 @@ func Open(path string) (*SQLiteStore, error) {
 	if err := s.migrate(); err != nil {
 		sqlDB.Close()
 		return nil, fmt.Errorf("db.Open migrate: %w", err)
+	}
+	if err := s.alterRepos(); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("db.Open alter repos: %w", err)
 	}
 	return s, nil
 }
@@ -104,6 +109,22 @@ CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user_id ON oauth_accounts(user_id)
 func (s *SQLiteStore) migrate() error {
 	_, err := s.db.ExecContext(context.Background(), schema)
 	return err
+}
+
+func (s *SQLiteStore) alterRepos() error {
+	columns := []string{
+		`ALTER TABLE repos ADD COLUMN repo_type TEXT NOT NULL DEFAULT 'remote'`,
+		`ALTER TABLE repos ADD COLUMN label TEXT`,
+		`ALTER TABLE repos ADD COLUMN path TEXT`,
+	}
+	for _, col := range columns {
+		if _, err := s.db.ExecContext(context.Background(), col); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column") {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // --- Helper functions ---
@@ -325,6 +346,7 @@ func scanRepo(row *sql.Row) (*Repo, error) {
 		&r.ID, &r.OwnerID, &r.Host, &r.RepoOwner, &r.RepoName,
 		&r.RemoteURL, &r.WebhookSecret, &r.TrustedHTML, &r.StaleTTLSecs,
 		&r.Status, &r.StatusMsg, &createdAt,
+		&r.RepoType, &r.Label, &r.Path,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("repo not found: %w", err)
@@ -338,7 +360,7 @@ func scanRepo(row *sql.Row) (*Repo, error) {
 
 const repoColumns = `id, owner_id, host, repo_owner, repo_name,
     remote_url, webhook_secret, trusted_html, stale_ttl_secs,
-    status, status_msg, created_at`
+    status, status_msg, created_at, repo_type, label, path`
 
 func (s *SQLiteStore) CreateRepo(ctx context.Context, r *Repo) error {
 	r.CreatedAt = time.Now().UTC()
@@ -348,11 +370,12 @@ func (s *SQLiteStore) CreateRepo(ctx context.Context, r *Repo) error {
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO repos (owner_id, host, repo_owner, repo_name,
             remote_url, webhook_secret, trusted_html, stale_ttl_secs,
-            status, status_msg, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            status, status_msg, created_at, repo_type, label, path)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.OwnerID, r.Host, r.RepoOwner, r.RepoName,
 		r.RemoteURL, r.WebhookSecret, r.TrustedHTML, r.StaleTTLSecs,
 		r.Status, r.StatusMsg, r.CreatedAt.Format(time.RFC3339),
+		r.RepoType, r.Label, r.Path,
 	)
 	if err != nil {
 		return fmt.Errorf("CreateRepo: %w", err)
@@ -403,6 +426,7 @@ func (s *SQLiteStore) listRepos(ctx context.Context, where string, arg any) ([]*
 			&r.ID, &r.OwnerID, &r.Host, &r.RepoOwner, &r.RepoName,
 			&r.RemoteURL, &r.WebhookSecret, &r.TrustedHTML, &r.StaleTTLSecs,
 			&r.Status, &r.StatusMsg, &createdAt,
+			&r.RepoType, &r.Label, &r.Path,
 		); err != nil {
 			return nil, err
 		}
@@ -416,11 +440,11 @@ func (s *SQLiteStore) UpdateRepo(ctx context.Context, r *Repo) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE repos SET owner_id=?, host=?, repo_owner=?, repo_name=?,
             remote_url=?, webhook_secret=?, trusted_html=?, stale_ttl_secs=?,
-            status=?, status_msg=?
+            status=?, status_msg=?, repo_type=?, label=?, path=?
          WHERE id=?`,
 		r.OwnerID, r.Host, r.RepoOwner, r.RepoName,
 		r.RemoteURL, r.WebhookSecret, r.TrustedHTML, r.StaleTTLSecs,
-		r.Status, r.StatusMsg, r.ID,
+		r.Status, r.StatusMsg, r.RepoType, r.Label, r.Path, r.ID,
 	)
 	return err
 }

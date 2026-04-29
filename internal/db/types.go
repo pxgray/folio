@@ -44,6 +44,9 @@ type Repo struct {
 	Status        string
 	StatusMsg     string
 	CreatedAt     time.Time
+	RepoType      string // "remote" or "local"
+	Label         string // local repo slug for URL routing
+	Path          string // local filesystem path
 }
 
 const (
