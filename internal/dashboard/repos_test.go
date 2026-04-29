@@ -33,7 +33,7 @@ func newDashboardTestServer(t *testing.T) (*httptest.Server, db.Store, *db.User)
 		t.Fatalf("CreateUser: %v", err)
 	}
 	authn := auth.New(store)
-	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, false)
+	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, nil, false)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return ts, store, user
@@ -542,5 +542,158 @@ func TestDashboardRepoNew_POST_MissingField(t *testing.T) {
 	bodyStr := string(body)
 	if !strings.Contains(bodyStr, "required") && !strings.Contains(bodyStr, "Host") && !strings.Contains(bodyStr, "error") {
 		t.Errorf("expected error message in body, got:\n%s", bodyStr)
+	}
+}
+
+func TestDashboardLocalRepoNew_POST_Valid(t *testing.T) {
+	ts, store, user := newDashboardTestServer(t)
+
+	form := url.Values{
+		"repo_type": {"local"},
+		"label":     {"my-docs"},
+		"path":      {t.TempDir()},
+	}
+
+	req := newCSRFPost(t, ts.URL+"/-/dashboard/repos/new", form, store, user.ID)
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST /-/dashboard/repos/new: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusSeeOther {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("want 303, got %d: %s", resp.StatusCode, body)
+	}
+
+	repos, err := store.ListReposByOwner(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("ListReposByOwner: %v", err)
+	}
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo, got %d", len(repos))
+	}
+	r := repos[0]
+	if r.RepoType != "local" {
+		t.Errorf("repo_type = %q, want local", r.RepoType)
+	}
+	if r.Label != "my-docs" {
+		t.Errorf("label = %q, want my-docs", r.Label)
+	}
+	if r.Status != db.RepoStatusReady {
+		t.Errorf("status = %q, want ready", r.Status)
+	}
+}
+
+func TestDashboardLocalRepoNew_GET(t *testing.T) {
+	ts, store, user := newDashboardTestServer(t)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/-/dashboard/repos/new", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.AddCookie(newSessionCookie(t, store, user.ID))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /-/dashboard/repos/new: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("want 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	for _, field := range []string{`name="repo_type"`, `name="label"`, `name="path"`} {
+		if !strings.Contains(bodyStr, field) {
+			t.Errorf("expected form field %q in body, got:\n%s", field, bodyStr)
+		}
+	}
+}
+
+func TestDashboardLocalRepoNew_POST_MissingField(t *testing.T) {
+	ts, store, user := newDashboardTestServer(t)
+
+	form := url.Values{
+		"repo_type": {"local"},
+		"label":     {"my-docs"},
+		"path":      {""},
+	}
+
+	req := newCSRFPost(t, ts.URL+"/-/dashboard/repos/new", form, store, user.ID)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /-/dashboard/repos/new: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusSeeOther || resp.StatusCode == http.StatusFound {
+		t.Fatalf("want non-redirect response, got %d", resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	if !strings.Contains(bodyStr, "required") && !strings.Contains(bodyStr, "Path") && !strings.Contains(bodyStr, "error") {
+		t.Errorf("expected error message in body, got:\n%s", bodyStr)
+	}
+}
+
+func TestDashboardRepoList_WithLocalRepo(t *testing.T) {
+	ts, store, user := newDashboardTestServer(t)
+
+	ctx := context.Background()
+
+	repo := &db.Repo{
+		OwnerID:  user.ID,
+		RepoType: "local",
+		Label:    "my-docs",
+		Path:     t.TempDir(),
+		Status:   db.RepoStatusReady,
+	}
+	if err := store.CreateRepo(ctx, repo); err != nil {
+		t.Fatalf("CreateRepo: %v", err)
+	}
+
+	authn := auth.New(store)
+	sess, err := authn.NewSession(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/-/dashboard/", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.AddCookie(&http.Cookie{Name: "session", Value: sess.Token})
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /-/dashboard/: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("want 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+
+	if !strings.Contains(bodyStr, "my-docs") {
+		t.Errorf("expected body to contain label 'my-docs', got:\n%s", bodyStr)
+	}
+	if !strings.Contains(bodyStr, "Local") {
+		t.Errorf("expected body to contain 'Local' badge, got:\n%s", bodyStr)
 	}
 }
