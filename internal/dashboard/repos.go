@@ -320,9 +320,13 @@ func (s *Server) handleRepoDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if s.gitStore != nil {
+
+	if repo.RepoType == "local" && s.gitStore != nil {
+		s.gitStore.RemoveLocal(repo.Label)
+	} else if s.gitStore != nil {
 		s.gitStore.RemoveRepo(repo.Host, repo.RepoOwner, repo.RepoName)
 	}
+
 	if err := s.dbStore.DeleteRepo(r.Context(), id); err != nil {
 		http.Error(w, "delete failed", http.StatusInternalServerError)
 		return
@@ -347,6 +351,13 @@ func (s *Server) handleRepoSync(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+
+	if repo.RepoType == "local" {
+		setFlash(w, "Local repos cannot be synced.")
+		http.Redirect(w, r, fmt.Sprintf("/-/dashboard/repos/%d", id), http.StatusSeeOther)
+		return
+	}
+
 	if s.gitStore != nil {
 		host := repo.Host
 		owner := repo.RepoOwner
