@@ -3,7 +3,6 @@ module github.com/pxgray/folio
 go 1.26.1
 
 require (
-	github.com/BurntSushi/toml v1.5.0
 	github.com/alecthomas/chroma/v2 v2.2.0
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/go-git/go-git/v5 v5.12.0
@@ -22,6 +21,7 @@ require (
 require (
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	dario.cat/mergo v1.0.0 // indirect
+	github.com/BurntSushi/toml v1.5.0 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/ProtonMail/go-crypto v1.0.0 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
