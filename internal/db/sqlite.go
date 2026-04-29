@@ -397,6 +397,12 @@ func (s *SQLiteStore) GetRepoByKey(ctx context.Context, host, repoOwner, repoNam
 	return scanRepo(row)
 }
 
+func (s *SQLiteStore) GetRepoByLabel(ctx context.Context, label string) (*Repo, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+repoColumns+` FROM repos WHERE repo_type='local' AND label=?`, label)
+	return scanRepo(row)
+}
+
 func (s *SQLiteStore) ListReposByOwner(ctx context.Context, ownerID int64) ([]*Repo, error) {
 	return s.listRepos(ctx, `WHERE owner_id = ?`, ownerID)
 }

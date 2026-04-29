@@ -39,6 +39,7 @@ type Store interface {
 	CreateRepo(ctx context.Context, r *Repo) error
 	GetRepo(ctx context.Context, id int64) (*Repo, error)
 	GetRepoByKey(ctx context.Context, host, repoOwner, repoName string) (*Repo, error)
+	GetRepoByLabel(ctx context.Context, label string) (*Repo, error)
 	ListReposByOwner(ctx context.Context, ownerID int64) ([]*Repo, error)
 	ListAllRepos(ctx context.Context) ([]*Repo, error)
 	UpdateRepo(ctx context.Context, r *Repo) error
