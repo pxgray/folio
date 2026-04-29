@@ -76,17 +76,24 @@ func (s *Server) handleLocalDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Look up local repo from DB.
+	_, err := s.dbStore.GetRepoByLabel(r.Context(), label)
+	if err != nil {
+		httpError(w, http.StatusNotFound, "local repo not found: "+label)
+		return
+	}
+
 	gr, err := s.store.GetLocal(label)
 	if err != nil {
 		if errors.Is(err, gitstore.ErrNotRegistered) {
-			httpError(w, http.StatusNotFound, "local repo not found: "+label)
+			httpError(w, http.StatusNotFound, "local repo not registered: "+label)
 			return
 		}
 		httpError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	trusted := false // local repos: TrustedHTML not yet supported via db.Store
+	trusted := false // local repos: TrustedHTML not yet supported
 
 	repoBase := "/local/" + label
 	repoName := "local/" + label
@@ -235,6 +242,20 @@ func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, 
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	repoKeys := s.store.RepoKeys()
+
+	var localLabels []string
+	if s.dbStore != nil {
+		allRepos, err := s.dbStore.ListAllRepos(r.Context())
+		if err == nil {
+			for _, repo := range allRepos {
+				if repo.RepoType == "local" {
+					localLabels = append(localLabels, repo.Label)
+				}
+			}
+		}
+	}
+
 	data := struct {
 		Title         string
 		Repos         []string
@@ -248,8 +269,8 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ActiveSection int
 	}{
 		Title:  "Folio",
-		Repos:  s.store.RepoKeys(),
-		Locals: s.store.LocalLabels(),
+		Repos:  repoKeys,
+		Locals: localLabels,
 	}
 
 	var buf bytes.Buffer
