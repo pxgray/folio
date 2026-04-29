@@ -183,6 +183,30 @@ func (s *Store) GetLocal(label string) (Repository, error) {
 	return r, nil
 }
 
+// RegisterLocal registers a single local filesystem repo with the Store.
+// Used when loading local repos from the DB at startup.
+func (s *Store) RegisterLocal(label, path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.locals[label]; exists {
+		return
+	}
+	if _, err := os.Stat(path); err != nil {
+		log.Printf("folio: registerLocal %q: path %q not accessible: %v", label, path, err)
+		return
+	}
+	s.locals[label] = newLocalRepo(path)
+	log.Printf("folio: registered local repo %q at %s", label, path)
+}
+
+// RemoveLocal unregisters a local repo by label.
+// Thread-safe. No-op if the label is not registered.
+func (s *Store) RemoveLocal(label string) {
+	s.mu.Lock()
+	delete(s.locals, label)
+	s.mu.Unlock()
+}
+
 // OpenLocals registers local filesystem repos. Should be called once at startup
 // for any TOML-configured local repos (deprecated path; new repos use db.Store).
 // All entries are validated before any are registered (all-or-nothing semantics).
