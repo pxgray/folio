@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"context"
 	"io"
 	"io/fs"
 	"net/http"
@@ -306,17 +307,25 @@ func makeTestLocalDir(t *testing.T) string {
 func makeTestServerWithLocal(t *testing.T, localDir string) *httptest.Server {
 	t.Helper()
 
-	gitStore := gitstore.New(t.TempDir(), 5*time.Minute)
-	if err := gitStore.OpenLocals([]gitstore.LocalEntry{
-		{Label: "testlocal", Path: localDir},
-	}); err != nil {
-		t.Fatalf("OpenLocals: %v", err)
-	}
-
 	dbStore, err := db.Open(":memory:")
 	if err != nil {
 		t.Fatalf("db.Open: %v", err)
 	}
+
+	ctx := context.Background()
+	repo := &db.Repo{
+		OwnerID:  1,
+		RepoType: "local",
+		Label:    "testlocal",
+		Path:     localDir,
+		Status:   db.RepoStatusReady,
+	}
+	if err := dbStore.CreateRepo(ctx, repo); err != nil {
+		t.Fatalf("CreateRepo: %v", err)
+	}
+
+	gitStore := gitstore.New(t.TempDir(), 5*time.Minute)
+	gitStore.RegisterLocal("testlocal", localDir)
 
 	staticFS, _ := fs.Sub(assets.StaticFS, "static")
 	srv, err := web.New(dbStore, gitStore, assets.TemplateFS, staticFS)
