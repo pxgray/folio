@@ -34,7 +34,7 @@ In Folio's dashboard, open the repo's edit page (`/-/dashboard/repos/{id}`) and 
 1. Go to your repo → **Settings** → **Webhooks** → **Add webhook**
 2. Set **Payload URL** to: `https://your-folio-server.example.com/github.com/your-username/your-repo/-/webhook`
 3. Set **Content type** to `application/json`
-4. Set **Secret** to the same secret you put in `folio.toml`
+4. Set **Secret** to the same secret you put in your repo's webhook secret field
 5. Choose **Just the push event**
 6. Click **Add webhook**
 

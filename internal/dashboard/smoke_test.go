@@ -39,7 +39,7 @@ func TestAPIRoutesSmoke(t *testing.T) {
 	}
 	sessionCookie := &http.Cookie{Name: "session", Value: sess.Token}
 
-	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, false)
+	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, nil, false)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 
@@ -65,7 +65,7 @@ func TestAPIRoutesSmoke(t *testing.T) {
 			name:       "GET /-/auth/login unauthenticated",
 			method:     http.MethodGet,
 			path:       "/-/auth/login",
-			wantStatus: http.StatusOK,
+			wantStatus: http.StatusSeeOther,
 		},
 		{
 			name:       "POST /-/api/v1/auth/login empty body",

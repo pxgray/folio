@@ -3,6 +3,7 @@ package dashboard
 import (
 	"embed"
 	"html/template"
+	"io/fs"
 	"net/http"
 	"net/url"
 
@@ -20,6 +21,7 @@ type Server struct {
 	authn         *auth.Auth
 	docSrv        *web.Server // nil when setup not yet complete
 	tmplFS        embed.FS
+	staticFS      fs.FS
 	setupComplete bool
 
 	setupTmpl *template.Template
@@ -35,6 +37,7 @@ func New(
 	authn *auth.Auth,
 	docSrv *web.Server,
 	tmplFS embed.FS,
+	staticFS fs.FS,
 	setupComplete bool,
 ) *Server {
 	s := &Server{
@@ -43,6 +46,7 @@ func New(
 		authn:         authn,
 		docSrv:        docSrv,
 		tmplFS:        tmplFS,
+		staticFS:      staticFS,
 		setupComplete: setupComplete,
 	}
 	s.setupTmpl = template.Must(

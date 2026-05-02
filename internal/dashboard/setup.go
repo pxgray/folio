@@ -1,11 +1,15 @@
 package dashboard
 
 import (
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/pxgray/folio/internal/auth"
 	"github.com/pxgray/folio/internal/db"
+	"github.com/pxgray/folio/internal/gitstore"
+	"github.com/pxgray/folio/internal/web"
 )
 
 type setupPageData struct {
@@ -104,6 +108,53 @@ func (s *Server) handleSetupPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setupComplete = true
+
+	// Initialize gitStore and docSrv if not already set (server started before setup completed).
+	if s.gitStore == nil {
+		cacheDir := "~/.cache/folio"
+		if v, err := s.dbStore.GetSetting(ctx, "cache_dir"); err == nil && v != "" {
+			cacheDir = v
+		}
+		staleTTL := 5 * time.Minute
+		if v, err := s.dbStore.GetSetting(ctx, "stale_ttl"); err == nil && v != "" {
+			if d, err := time.ParseDuration(v); err == nil {
+				staleTTL = d
+			}
+		}
+		s.gitStore = gitstore.New(cacheDir, staleTTL)
+
+		// Hydrate gitstore from DB.
+		repos, err := s.dbStore.ListAllRepos(ctx)
+		if err != nil {
+			log.Printf("folio: list repos: %v", err)
+		} else {
+			for _, rp := range repos {
+				if rp.Status != db.RepoStatusReady && rp.Status != db.RepoStatusPending {
+					continue
+				}
+				entry := gitstore.RepoEntry{
+					Host:      rp.Host,
+					Owner:     rp.RepoOwner,
+					Name:      rp.RepoName,
+					RemoteURL: rp.RemoteURL,
+				}
+				if err := s.gitStore.AddRepo(ctx, entry); err != nil {
+					log.Printf("folio: AddRepo %s/%s/%s: %v", rp.Host, rp.RepoOwner, rp.RepoName, err)
+					_ = s.dbStore.UpdateRepoStatus(ctx, rp.ID, db.RepoStatusError, err.Error())
+				} else if rp.Status != db.RepoStatusReady {
+					_ = s.dbStore.UpdateRepoStatus(ctx, rp.ID, db.RepoStatusReady, "")
+				}
+			}
+		}
+	}
+
+	if s.docSrv == nil && s.gitStore != nil {
+		var err error
+		s.docSrv, err = web.New(s.dbStore, s.gitStore, s.tmplFS, s.staticFS)
+		if err != nil {
+			log.Printf("folio: web.New: %v", err)
+		}
+	}
 
 	http.Redirect(w, r, "/-/auth/login", http.StatusSeeOther)
 }

@@ -124,6 +124,8 @@
   var radios = document.querySelectorAll('input[name="repo_type"]');
   var remoteFields = document.getElementById('remote-fields');
   var localFields = document.getElementById('local-fields');
+  var remoteInputs = remoteFields.querySelectorAll('input');
+  var localInputs = localFields.querySelectorAll('input');
 
   function toggle() {
     var isLocal = false;
@@ -135,6 +137,12 @@
     }
     remoteFields.style.display = isLocal ? 'none' : '';
     localFields.style.display = isLocal ? '' : 'none';
+    for (var i = 0; i < remoteInputs.length; i++) {
+      remoteInputs[i].disabled = isLocal;
+    }
+    for (var i = 0; i < localInputs.length; i++) {
+      localInputs[i].disabled = !isLocal;
+    }
   }
 
   for (var i = 0; i < radios.length; i++) {

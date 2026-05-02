@@ -26,7 +26,7 @@ func newTestDashboard(t *testing.T) (*httptest.Server, db.Store) {
 	t.Cleanup(func() { store.Close() })
 
 	authn := auth.New(store)
-	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, false)
+	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, nil, false)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return ts, store
@@ -40,7 +40,7 @@ func TestHandlerNonNil(t *testing.T) {
 	defer store.Close()
 
 	authn := auth.New(store)
-	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, false)
+	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, nil, false)
 	if srv.Handler() == nil {
 		t.Fatal("Handler() returned nil")
 	}
@@ -151,7 +151,7 @@ func TestMainSmoke_RedirectsToSetupWhenNotConfigured(t *testing.T) {
 	defer store.Close()
 
 	authn := auth.New(store)
-	dashSrv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, false)
+	dashSrv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, nil, false)
 	dashHandler := dashSrv.Handler()
 
 	combined := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

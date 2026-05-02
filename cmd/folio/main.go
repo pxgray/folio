@@ -177,6 +177,10 @@ func main() {
 			dashHandler.ServeHTTP(w, r)
 			return
 		}
+		if !setupComplete {
+			http.Redirect(w, r, "/-/setup", http.StatusSeeOther)
+			return
+		}
 		if docHandler != nil {
 			docHandler.ServeHTTP(w, r)
 		} else {

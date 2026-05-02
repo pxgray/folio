@@ -5,11 +5,11 @@ import (
 	"html/template"
 	"sync"
 
-	"github.com/yuin/goldmark/ast"
 	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting/v2"
+	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/renderer"
@@ -46,8 +46,8 @@ var rwPool = sync.Pool{
 // safe for concurrent use. The baked-in transformer delegates to the per-call
 // LinkRewriter stored in a package-level pointer, set before each Parse call.
 var (
-	goldmarkUntrusted goldmark.Markdown
-	goldmarkTrusted   goldmark.Markdown
+	goldmarkUntrusted  goldmark.Markdown
+	goldmarkTrusted    goldmark.Markdown
 	activeLinkRewriter *LinkRewriter
 )
 

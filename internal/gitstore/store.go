@@ -86,7 +86,19 @@ func (s *Store) AddRepo(ctx context.Context, e RepoEntry) error {
 	} else {
 		log.Printf("folio: opening %s from %s", key, localDir)
 		if err := repo.open(); err != nil {
-			return fmt.Errorf("open %s: %w", key, err)
+			// Directory exists but is not a valid git repo (e.g. from a
+			// previous failed clone). Remove it and try cloning fresh.
+			log.Printf("folio: %s is not a valid git repo, removing and re-cloning", localDir)
+			if rerr := os.RemoveAll(localDir); rerr != nil {
+				return fmt.Errorf("remove %s: %w (original open error: %v)", localDir, rerr, err)
+			}
+			if err := os.MkdirAll(filepath.Dir(localDir), 0o755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", filepath.Dir(localDir), err)
+			}
+			if err := repo.clone(ctx); err != nil {
+				return fmt.Errorf("clone %s: %w", key, err)
+			}
+			log.Printf("folio: re-cloned %s", key)
 		}
 	}
 

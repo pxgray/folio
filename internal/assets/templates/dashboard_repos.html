@@ -28,11 +28,7 @@
           {{end}}
         </td>
         <td>
-          {{if eq .RepoType "local"}}
-            <span class="badge badge-ready">Ready</span>
-          {{else}}
-            <span class="badge badge-{{.Status}}">{{.Status}}</span>
-          {{end}}
+          <span class="badge badge-{{.Status}}">{{.Status}}</span>
         </td>
         <td>
           <div class="row-actions">

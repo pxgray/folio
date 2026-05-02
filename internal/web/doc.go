@@ -242,7 +242,10 @@ func (s *Server) serveMarkdownPage(w http.ResponseWriter, src []byte, repoBase, 
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	repoKeys := s.store.RepoKeys()
+	var repoKeys []string
+	if s.store != nil {
+		repoKeys = s.store.RepoKeys()
+	}
 
 	var localLabels []string
 	if s.dbStore != nil {

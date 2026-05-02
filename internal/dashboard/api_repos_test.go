@@ -49,7 +49,7 @@ func newRepoAPITestServer(t *testing.T) (*httptest.Server, db.Store, *db.User, *
 	}
 
 	authn := auth.New(store)
-	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, false)
+	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, nil, false)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 

@@ -19,7 +19,7 @@ tasks:
       - "{{.BIN_DIR}}/{{.BINARY}}"
 
   run:
-    desc: "Build and run the server (usage: task run -- folio.toml)"
+    desc: "Build and run the server (usage: task run -- folio serve)"
     deps: [build]
     cmds:
       - "{{.BIN_DIR}}/{{.BINARY}} {{.CLI_ARGS}}"

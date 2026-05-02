@@ -22,6 +22,16 @@ import (
 )
 
 func (s *Server) handleLoginGet(w http.ResponseWriter, r *http.Request) {
+	if !s.setupComplete {
+		complete, err := s.dbStore.IsSetupComplete(r.Context())
+		if err == nil && !complete {
+			http.Redirect(w, r, "/-/setup", http.StatusSeeOther)
+			return
+		}
+		if err == nil && complete {
+			s.setupComplete = true
+		}
+	}
 	data := map[string]any{"Title": "Sign in", "Error": r.URL.Query().Get("error")}
 	s.loginTmpl.Execute(w, data)
 }

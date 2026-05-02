@@ -54,7 +54,7 @@ func adminTestServer(t *testing.T) (*httptest.Server, string, string) {
 		t.Fatalf("NewSession regular: %v", err)
 	}
 
-	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, false)
+	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, nil, false)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return ts, adminSess.Token, regularSess.Token
@@ -199,7 +199,7 @@ func adminTestServerWithStore(t *testing.T) (*httptest.Server, string, string, d
 		t.Fatalf("NewSession regular: %v", err)
 	}
 
-	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, false)
+	srv := dashboard.New(store, nil, authn, nil, assets.TemplateFS, nil, false)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return ts, adminSess.Token, regularSess.Token, store

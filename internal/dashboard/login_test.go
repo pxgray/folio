@@ -2,7 +2,6 @@ package dashboard_test
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -170,26 +169,22 @@ func TestFormLogin_BadPassword(t *testing.T) {
 func TestLoginPageGet(t *testing.T) {
 	ts, _ := newTestDashboard(t)
 
-	resp, err := http.Get(ts.URL + "/-/auth/login")
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	resp, err := client.Get(ts.URL + "/-/auth/login")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("want 303, got %d", resp.StatusCode)
 	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bodyStr := string(body)
-
-	if !strings.Contains(bodyStr, "<form") {
-		t.Error("expected response body to contain <form")
-	}
-	if !strings.Contains(bodyStr, "/-/auth/login") {
-		t.Error("expected response body to contain /-/auth/login")
+	if loc := resp.Header.Get("Location"); loc != "/-/setup" {
+		t.Fatalf("want Location /-/setup, got %q", loc)
 	}
 }

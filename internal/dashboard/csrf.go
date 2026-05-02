@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"crypto/subtle"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -27,6 +28,7 @@ func requireCSRF(next http.Handler) http.Handler {
 
 		cookie, err := r.Cookie(csrfCookieName)
 		if err != nil {
+			log.Printf("folio: CSRF reject %s %s: no cookie", r.Method, r.URL.Path)
 			http.Error(w, "CSRF token missing", http.StatusForbidden)
 			return
 		}
@@ -34,11 +36,13 @@ func requireCSRF(next http.Handler) http.Handler {
 
 		formToken := r.FormValue("_csrf")
 		if formToken == "" {
+			log.Printf("folio: CSRF reject %s %s: no form token", r.Method, r.URL.Path)
 			http.Error(w, "CSRF token missing from form", http.StatusForbidden)
 			return
 		}
 
 		if subtle.ConstantTimeCompare([]byte(cookieToken), []byte(formToken)) != 1 {
+			log.Printf("folio: CSRF reject %s %s: token mismatch", r.Method, r.URL.Path)
 			http.Error(w, "CSRF token mismatch", http.StatusForbidden)
 			return
 		}

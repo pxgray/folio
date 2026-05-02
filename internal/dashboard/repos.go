@@ -67,10 +67,6 @@ func (s *Server) handleRepoNew(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRepoCreate(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
 
 	repoType := strings.TrimSpace(r.FormValue("repo_type"))
 	if repoType == "" {
@@ -145,6 +141,11 @@ func (s *Server) handleRepoCreate(w http.ResponseWriter, r *http.Request) {
 			CSRFToken: csrfTokenFromContext(r),
 		})
 		return
+	}
+
+	// Register local repos with the gitstore immediately.
+	if repoType == "local" && s.gitStore != nil {
+		s.gitStore.RegisterLocal(repo.Label, repo.Path)
 	}
 
 	// Trigger background clone for remote repos.
